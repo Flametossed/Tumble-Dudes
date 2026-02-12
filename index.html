@@ -9,12 +9,11 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, doc, setDoc, getDoc, getDocs, onSnapshot, updateDoc, deleteDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // --- Firebase Config & Globals ---
         // --- CONFIGURATION SECTION ---
-        
-        // PASTE YOUR FIREBASE CONFIG HERE IF DEPLOYING TO VERCEL
-        // (You can get this from Project Settings > General > Your Apps in Firebase Console)
+        // YOUR FIREBASE CONFIG (Tumble Dudes)
         const myFirebaseConfig = {
             apiKey: "AIzaSyAZcHTFks9pRqcHncpeF6s5ZjmGLHHe5MQ",
             authDomain: "tumble-dudes-4330d.firebaseapp.com",
@@ -25,19 +24,19 @@
         };
         // -----------------------------
 
-        // Detect Environment (Preview vs Vercel/Production)
         let firebaseConfig;
         let appId;
         
         try {
-            // Try to use the Preview environment variables
+            // Attempt to use Preview environment config first
             firebaseConfig = JSON.parse(__firebase_config);
             appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         } catch (e) {
-            // Fallback to manual config (for Vercel deployment)
-            console.log("Using manual Firebase config");
+            // Fallback to manual config for Production/Vercel
+            console.log("Using manual Firebase config (Production Mode)");
             firebaseConfig = myFirebaseConfig;
-            appId = "bean-royale-prod";
+            // This 'appId' is used for the database path, not the firebase config appId
+            appId = "tumble-dudes-prod"; 
         }
 
         const app = initializeApp(firebaseConfig);
@@ -61,9 +60,10 @@
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
-                    throw new Error("No custom token");
+                    await signInAnonymously(auth);
                 }
             } catch (e) {
+                console.warn("Auth fallback:", e);
                 // Standard anonymous login for Vercel deployment
                 await signInAnonymously(auth);
             }
@@ -85,61 +85,92 @@
         
         window.createLobby = async () => {
             if (!currentUser) return;
-            const username = document.getElementById('username-input').value || "Host Bean";
-            myUsername = username;
-            
-            const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-            currentLobbyId = code;
-            isHost = true;
+            const btn = document.querySelector('button[onclick="window.createLobby()"]');
+            btn.innerText = "CREATING...";
+            btn.disabled = true;
 
-            const lobbyRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code);
-            
-            await setDoc(lobbyRef, {
-                hostId: currentUser.uid,
-                status: 'waiting',
-                levelSegments: [], 
-                createdAt: serverTimestamp()
-            });
+            try {
+                const username = document.getElementById('username-input').value || "Host Bean";
+                myUsername = username;
+                
+                const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+                currentLobbyId = code;
+                isHost = true;
 
-            const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code, 'players', currentUser.uid);
-            await setDoc(playerRef, {
-                username: username,
-                isHost: true,
-                joinedAt: serverTimestamp(),
-                state: { x: -5, y: 5, z: 0, rot: 0, finished: false }
-            });
+                const lobbyRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code);
+                
+                await setDoc(lobbyRef, {
+                    hostId: currentUser.uid,
+                    status: 'waiting',
+                    levelSegments: [], 
+                    createdAt: serverTimestamp()
+                });
 
-            enterLobbyUI(code);
+                const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code, 'players', currentUser.uid);
+                await setDoc(playerRef, {
+                    username: username,
+                    isHost: true,
+                    joinedAt: serverTimestamp(),
+                    state: { x: -5, y: 5, z: 0, rot: 0, finished: false }
+                });
+
+                enterLobbyUI(code);
+            } catch (error) {
+                console.error("Create Lobby Error:", error);
+                alert("Failed to create lobby: " + error.message + "\n\n1. Did you enable Anonymous Auth?\n2. Are Database Rules in Test Mode?");
+                btn.innerText = "HOST GAME";
+                btn.disabled = false;
+            }
         }
 
         window.joinLobby = async () => {
             if (!currentUser) return;
-            const code = document.getElementById('code-input').value.toUpperCase();
-            const username = document.getElementById('username-input').value || "Guest Bean";
-            
-            if(!code) { alert("Enter a code!"); return; }
-            
-            myUsername = username;
-            currentLobbyId = code;
-            isHost = false;
+            const btn = document.querySelector('button[onclick="window.joinLobby()"]');
+            btn.innerText = "JOINING...";
+            btn.disabled = true;
 
-            const lobbyRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code);
-            const snap = await getDoc(lobbyRef);
+            try {
+                const code = document.getElementById('code-input').value.toUpperCase();
+                const username = document.getElementById('username-input').value || "Guest Bean";
+                
+                if(!code) throw new Error("Please enter a lobby code");
+                
+                myUsername = username;
+                currentLobbyId = code;
+                isHost = false;
 
-            if (!snap.exists()) {
-                alert("Lobby not found!");
-                return;
+                const lobbyRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code);
+                const snap = await getDoc(lobbyRef);
+
+                if (!snap.exists()) {
+                    throw new Error("Lobby not found! Check the code.");
+                }
+                
+                if (snap.data().status === 'playing') {
+                    throw new Error("Game already in progress!");
+                }
+
+                const playersRef = collection(db, 'artifacts', appId, 'public', 'data', 'lobbies', code, 'players');
+                const playersSnap = await getDocs(playersRef);
+                if (playersSnap.size >= 6) {
+                    throw new Error("Lobby is full! Max 6 players.");
+                }
+
+                const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code, 'players', currentUser.uid);
+                await setDoc(playerRef, {
+                    username: username,
+                    isHost: false,
+                    joinedAt: serverTimestamp(),
+                    state: { x: -5, y: 5, z: 0, rot: 0, finished: false }
+                });
+
+                enterLobbyUI(code);
+            } catch (error) {
+                console.error("Join Error:", error);
+                alert(error.message);
+                btn.innerText = "JOIN GAME";
+                btn.disabled = false;
             }
-
-            const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code, 'players', currentUser.uid);
-            await setDoc(playerRef, {
-                username: username,
-                isHost: false,
-                joinedAt: serverTimestamp(),
-                state: { x: -5, y: 5, z: 0, rot: 0, finished: false }
-            });
-
-            enterLobbyUI(code);
         }
 
         function enterLobbyUI(code) {
@@ -183,13 +214,25 @@
 
         window.hostStartGame = async () => {
             if(!isHost) return;
-            const level = window.generateRandomLevelStructure(); 
-            
-            const lobbyRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', currentLobbyId);
-            await updateDoc(lobbyRef, {
-                status: 'playing',
-                levelSegments: level
-            });
+            const btn = document.getElementById('start-btn');
+            btn.disabled = true;
+            btn.innerText = "STARTING...";
+
+            try {
+                const level = window.generateRandomLevelStructure(); 
+                
+                const lobbyRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', currentLobbyId);
+                await updateDoc(lobbyRef, {
+                    status: 'playing',
+                    levelSegments: level
+                });
+                // Snapshot listener above will trigger the actual UI change
+            } catch (error) {
+                console.error("Start Game Error:", error);
+                alert("Failed to start game: " + error.message + "\n\nCheck Firebase Database Rules (Write permissions).");
+                btn.disabled = false;
+                btn.innerText = "START RACE (ANYTIME)";
+            }
         }
 
         // Properly reset state without reload
@@ -200,6 +243,19 @@
             document.getElementById('lobby-ui').style.display = 'flex';
             document.getElementById('main-menu').style.display = 'block';
             document.getElementById('wait-room').style.display = 'none';
+            
+            // Reset buttons
+            const createBtn = document.querySelector('button[onclick="window.createLobby()"]');
+            createBtn.innerText = "HOST GAME";
+            createBtn.disabled = false;
+            
+            const joinBtn = document.querySelector('button[onclick="window.joinLobby()"]');
+            joinBtn.innerText = "JOIN GAME";
+            joinBtn.disabled = false;
+            
+            const startBtn = document.getElementById('start-btn');
+            startBtn.innerText = "START RACE (ANYTIME)";
+            startBtn.disabled = false;
 
             // Game State Reset
             window.gameActive = false;
@@ -213,14 +269,12 @@
             if (playersUnsubscribe) { playersUnsubscribe(); playersUnsubscribe = null; }
 
             // Cleanup Scene
-            window.clearLevel(); // Uses global function exposed below
+            window.clearLevel(); 
             if (window.playerBody) {
-                // We rely on the global clear logic, but ensure player is removed
-                // The main script will handle reconstruction on new game
+                // Main cleanup handled by clearLevel, ensure physics clear
             }
             window.opponentsData = {};
             
-            // Randomize Music
             window.changeMusicTrack();
         }
 
@@ -269,6 +323,7 @@
             margin-top: 10px; transition: 0.2s;
         }
         button.btn-primary:hover { background: #d400d4; transform: scale(1.02); }
+        button.btn-primary:disabled { background: #555; cursor: not-allowed; transform: none; }
 
         #player-list {
             list-style: none; padding: 0; margin: 20px 0; text-align: left;
@@ -366,7 +421,7 @@
             <ul id="player-list">
                 <!-- Players go here -->
             </ul>
-            <button id="start-btn" class="btn-primary" onclick="window.hostStartGame()">START RACE</button>
+            <button id="start-btn" class="btn-primary" onclick="window.hostStartGame()">START RACE (ANYTIME)</button>
             <p style="font-size: 0.8em; color: #aaa; margin-top: 10px;">Waiting for host...</p>
             <button onclick="window.backToMenu()" style="background:transparent; border:1px solid #555; font-size:0.8em; margin-top:20px;">Cancel</button>
         </div>
@@ -394,7 +449,8 @@
     </div>
 
     <script>
-        // --- No API Key Needed ---
+        // --- Gemini Configuration ---
+        const apiKey = ""; 
         
         // --- Three/Cannon Vars ---
         let scene, camera, renderer, world;
@@ -446,4 +502,659 @@
             document.body.appendChild(renderer.domElement);
 
             const ambient = new THREE.AmbientLight(0xffffff, 0.5);
-            scene
+            scene.add(ambient);
+            
+            const sun = new THREE.DirectionalLight(0xffaa00, 0.8);
+            sun.position.set(50, 100, 50);
+            sun.castShadow = true;
+            sun.shadow.camera.left = -100; sun.shadow.camera.right = 100;
+            sun.shadow.camera.top = 100; sun.shadow.camera.bottom = -100;
+            scene.add(sun);
+
+            const purpleLight = new THREE.PointLight(0xff00ff, 0.8, 200);
+            purpleLight.position.set(50, 50, 50);
+            scene.add(purpleLight);
+
+            world = new CANNON.World();
+            world.gravity.set(0, -30, 0); 
+            world.broadphase = new CANNON.NaiveBroadphase();
+            
+            const defaultMaterial = new CANNON.Material('default');
+            const defaultContactMaterial = new CANNON.ContactMaterial(defaultMaterial, defaultMaterial, {
+                friction: 0.3,
+                restitution: 0.1,
+            });
+            world.addContactMaterial(defaultContactMaterial);
+
+            createBackgroundScenery();
+            
+            // We do NOT create player or level here anymore.
+            // We wait for startMultiplayerGame()
+
+            // Input Handling
+            window.addEventListener('keydown', (e) => { 
+                let key = e.key.toLowerCase();
+                if (key === ' ') key = 'space'; 
+                if(keys.hasOwnProperty(key)) keys[key] = true; 
+            });
+            window.addEventListener('keyup', (e) => { 
+                let key = e.key.toLowerCase();
+                if (key === ' ') key = 'space';
+                if(keys.hasOwnProperty(key)) keys[key] = false; 
+            });
+            window.addEventListener('resize', onWindowResize);
+
+            document.addEventListener('click', () => {
+                if (!audioCtx) initAudio();
+                if (window.gameActive && !isPointerLocked) {
+                    document.body.requestPointerLock();
+                }
+            });
+
+            document.addEventListener('pointerlockchange', () => {
+                isPointerLocked = document.pointerLockElement === document.body;
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (isPointerLocked) {
+                    cameraAngle += e.movementX * 0.002;
+                }
+            });
+            
+            animate();
+        }
+
+        // --- MultiPlayer Start ---
+        window.startMultiplayerGame = function(levelSegments) {
+            clearLevel();
+            buildLevelFromSegments(levelSegments);
+            createPlayer();
+            
+            // Note: Opponents are created dynamically in the update loop based on window.opponentsData
+            
+            window.gameActive = true;
+            gameActive = true;
+            if (!audioCtx) initAudio();
+            
+            window.changeMusicTrack(); // Shuffle music on start
+            updateCommentary('start');
+        }
+
+        // --- Audio System ---
+        
+        const musicTracks = [
+            {
+                name: "Funky Bean",
+                tempo: 250,
+                bass: [110, 110, 130, 146, 110, 110, 98, 98],
+                melody: [440, 0, 523, 440, 0, 587, 523, 0],
+                bassType: 'triangle', melodyType: 'square'
+            },
+            {
+                name: "Hyper Space",
+                tempo: 200, // Faster interval
+                bass: [65, 0, 65, 0, 73, 0, 73, 0],
+                melody: [523, 523, 784, 0, 659, 0, 523, 0], 
+                bassType: 'sawtooth', melodyType: 'sawtooth'
+            },
+            {
+                name: "Retro Dash",
+                tempo: 280, 
+                bass: [87, 87, 98, 98, 110, 110, 130, 0], 
+                melody: [698, 0, 659, 0, 587, 587, 523, 0],
+                bassType: 'square', melodyType: 'triangle'
+            }
+        ];
+        
+        window.changeMusicTrack = function() {
+            currentTrack = musicTracks[Math.floor(Math.random() * musicTracks.length)];
+            // Reset interval if running will handle next loop
+        }
+        
+        // Init with one
+        currentTrack = musicTracks[0];
+
+        function initAudio() {
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+                if(audioCtx.state === 'suspended') audioCtx.resume();
+                startMusicLoop();
+            } catch(e) { console.error("Audio init failed", e); }
+        }
+
+        function toggleMusic() {
+            isMuted = !isMuted;
+            if(isMuted && audioCtx) audioCtx.suspend();
+            if(!isMuted && audioCtx) audioCtx.resume();
+        }
+
+        function playTone(freq, duration, type='sine', vol=0.1) {
+            if (!audioCtx || isMuted) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function startMusicLoop() {
+            if(isPlayingMusic) return;
+            isPlayingMusic = true;
+            
+            // Internal loop function to handle variable tempo
+            const loop = () => {
+                if(!audioCtx || isMuted || audioCtx.state !== 'running') {
+                     setTimeout(loop, 250); return;
+                }
+                
+                const track = currentTrack;
+                playTone(track.bass[noteIndex % 8], 0.2, track.bassType, 0.15);
+                if(track.melody[noteIndex % 8] !== 0) {
+                    playTone(track.melody[noteIndex % 8], 0.1, track.melodyType, 0.05);
+                }
+                if(noteIndex % 2 === 0) playTone(2000 + Math.random()*500, 0.05, 'sawtooth', 0.02);
+                noteIndex++;
+                
+                setTimeout(loop, track.tempo);
+            };
+            loop();
+        }
+
+        async function playPCM(base64Data) {
+            if(!audioCtx) initAudio();
+            if(audioCtx.state === 'suspended') await audioCtx.resume();
+
+            const binaryString = atob(base64Data);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            const int16 = new Int16Array(bytes.buffer);
+            const float32 = new Float32Array(int16.length);
+            for(let i=0; i<int16.length; i++) {
+                float32[i] = int16[i] / 32768.0;
+            }
+            const buffer = audioCtx.createBuffer(1, float32.length, 24000);
+            buffer.copyToChannel(float32, 0);
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioCtx.destination);
+            source.start();
+            
+            document.getElementById('commentary-wave').style.display = 'inline-block';
+            source.onended = () => {
+                 document.getElementById('commentary-wave').style.display = 'none';
+            };
+        }
+
+        // --- Visuals & Level ---
+
+        function createBackgroundScenery() {
+            const geom = new THREE.IcosahedronGeometry(15, 0);
+            for(let i=0; i<80; i++) {
+                const mat = new THREE.MeshPhongMaterial({ 
+                    color: Math.random() * 0xffffff, 
+                    transparent: true, 
+                    opacity: 0.3,
+                    flatShading: true
+                });
+                const mesh = new THREE.Mesh(geom, mat);
+                mesh.position.set(
+                    (Math.random() - 0.5) * 600,
+                    (Math.random() - 0.5) * 400 + 40,
+                    (Math.random() - 0.5) * 400
+                );
+                mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
+                scene.add(mesh);
+            }
+        }
+
+        // Expose for host
+        window.generateRandomLevelStructure = function() {
+            const types = ['path', 'narrow', 'hammers', 'tilts', 'walls', 'ramp_up', 'ramp_down', 'shift_left', 'shift_right'];
+            const length = 15 + Math.floor(Math.random() * 10); 
+            const level = ['start'];
+            for(let i=0; i<length; i++) {
+                level.push(types[Math.floor(Math.random() * types.length)]);
+            }
+            level.push('finish');
+            return level;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        async function updateCommentary(eventType) {
+            // Simplified commentary for now to reduce API calls in multiplayer
+            if(!gameActive) return;
+            const now = Date.now();
+            if(now - lastCommentaryTime < 8000) return;
+            lastCommentaryTime = now;
+
+            const boxText = document.getElementById('commentary-text');
+            let promptText = "";
+
+            if (eventType === 'start') promptText = "Say excitedly: Welcome to Bean Royale Multiplayer! Race to the finish!";
+            else if (eventType === 'fall') promptText = "Say mockingly: Someone took a massive fall!";
+            else if (eventType === 'finish') promptText = `Say cheeringly: We have a finisher! Incredible performance!`;
+            
+            if(!promptText) return;
+
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: promptText }] }],
+                        generationConfig: {
+                            responseModalities: ["AUDIO"],
+                            speechConfig: {
+                                voiceConfig: {
+                                    prebuiltVoiceConfig: { voiceName: "Puck" }
+                                }
+                            }
+                        }
+                    })
+                });
+
+                const data = await response.json();
+                if(data.candidates && data.candidates[0].content.parts[0].inlineData) {
+                    const pcmData = data.candidates[0].content.parts[0].inlineData.data;
+                    playPCM(pcmData);
+                    boxText.innerText = `🎙️ "${eventType.toUpperCase()}"`;
+                    document.getElementById('commentary-box').style.opacity = 1;
+                }
+            } catch (e) { console.error("TTS Error", e); }
+        }
+
+
+        // --- Level System ---
+
+        let levelObjects = [];
+        let currentPos = { x: -5, y: -0.5, z: 0 };
+
+        function createBox(w, h, d, x, y, z, color, mass=0, rotX=0, rotY=0, rotZ=0) {
+            const geo = new THREE.BoxGeometry(w, h, d);
+            const mat = new THREE.MeshPhongMaterial({ color });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, y, z);
+            mesh.rotation.set(rotX, rotY, rotZ);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            scene.add(mesh);
+
+            const shape = new CANNON.Box(new CANNON.Vec3(w/2, h/2, d/2));
+            const body = new CANNON.Body({ mass: mass, material: world.defaultMaterial });
+            body.addShape(shape);
+            body.position.set(x, y, z);
+            
+            const q = new CANNON.Quaternion();
+            q.setFromEuler(rotX, rotY, rotZ);
+            body.quaternion.copy(q);
+
+            world.addBody(body);
+
+            const obj = { mesh, body, type: 'static' };
+            levelObjects.push(obj);
+            return obj;
+        }
+
+        window.clearLevel = function() {
+            levelObjects.forEach(obj => {
+                scene.remove(obj.mesh);
+                world.removeBody(obj.body);
+            });
+            levelObjects = [];
+            obstacles = [];
+            currentPos = { x: -5, y: -0.5, z: 0 };
+            
+            // Cleanup player if existing
+            if(player) {
+                scene.remove(player.mesh);
+                world.removeBody(player.body);
+                player = null;
+                window.playerBody = null;
+                window.playerMesh = null;
+            }
+            // Cleanup opponents
+            for(let uid in opponents) {
+                scene.remove(opponents[uid].mesh);
+            }
+            opponents = {};
+        }
+
+        function buildLevelFromSegments(segments) {
+            currentPos = { x: -5, y: -0.5, z: 0 };
+            
+            segments.forEach((seg, index) => {
+                const baseColor = index % 2 === 0 ? 0xdddddd : 0xcccccc;
+
+                switch(seg) {
+                    case 'start':
+                        createBox(15, 1, 20, currentPos.x, currentPos.y, currentPos.z, 0x44cc44);
+                        currentPos.x += 15;
+                        break;
+                    case 'path':
+                        createBox(30, 1, 10, currentPos.x + 15, currentPos.y, currentPos.z, baseColor);
+                        currentPos.x += 30;
+                        break;
+                    case 'narrow':
+                        createBox(20, 1, 2, currentPos.x + 10, currentPos.y, currentPos.z, 0xffaa00);
+                        currentPos.x += 20;
+                        break;
+                    case 'ramp_up':
+                        const rampLen = 30; const rise = 10;
+                        const angle = Math.atan2(rise, rampLen); 
+                        const hyp = Math.sqrt(rampLen*rampLen + rise*rise);
+                        createBox(hyp, 1, 10, currentPos.x + rampLen/2, currentPos.y + rise/2, currentPos.z, 0xff00ff, 0, 0, 0, angle);
+                        currentPos.x += rampLen; currentPos.y += rise;
+                        break;
+                    case 'ramp_down':
+                        const rampLenD = 30; const drop = 10;
+                        const angleD = -Math.atan2(drop, rampLenD);
+                        const hypD = Math.sqrt(rampLenD*rampLenD + drop*drop);
+                        createBox(hypD, 1, 10, currentPos.x + rampLenD/2, currentPos.y - drop/2, currentPos.z, 0x00ffff, 0, 0, 0, angleD);
+                        currentPos.x += rampLenD; currentPos.y -= drop;
+                        break;
+                    case 'shift_left':
+                        const diagLen = Math.sqrt(20*20 + 20*20);
+                        createBox(diagLen, 1, 10, currentPos.x + 10, currentPos.y, currentPos.z - 10, 0xffff00, 0, 0, -Math.PI/4, 0);
+                        currentPos.x += 20; currentPos.z -= 20;
+                        break;
+                    case 'shift_right':
+                        const diagLenR = Math.sqrt(20*20 + 20*20);
+                        createBox(diagLenR, 1, 10, currentPos.x + 10, currentPos.y, currentPos.z + 10, 0xffff00, 0, 0, Math.PI/4, 0);
+                        currentPos.x += 20; currentPos.z += 20;
+                        break;
+                    case 'walls':
+                        createBox(25, 1, 10, currentPos.x + 12.5, currentPos.y, currentPos.z, baseColor);
+                        createBox(1, 4, 10, currentPos.x + 8, currentPos.y + 2, currentPos.z, 0x5555ff);
+                        createBox(1, 4, 10, currentPos.x + 16, currentPos.y + 2, currentPos.z, 0x5555ff);
+                        currentPos.x += 25;
+                        break;
+                    case 'hammers':
+                        createBox(25, 1, 10, currentPos.x + 12.5, currentPos.y, currentPos.z, 0x888888);
+                        const hX = currentPos.x + 12.5; const hY = currentPos.y; const hZ = currentPos.z;
+                        const hammerBase = createBox(1, 6, 1, hX, hY + 3, hZ, 0x222222);
+                        const hammerHead = createBox(8, 1, 1, hX, hY + 6, hZ, 0xff2222, 10);
+                        hammerHead.body.type = CANNON.Body.KINEMATIC; 
+                        obstacles.push({ ...hammerHead, type: 'spinner', speed: 3 });
+                        currentPos.x += 25;
+                        break;
+                    case 'tilts':
+                        for(let i=0; i<2; i++) {
+                            const p = createBox(8, 0.5, 8, currentPos.x + 8 + (i*10), currentPos.y + 0.5, currentPos.z, 0x33aaff, 10);
+                            p.body.type = CANNON.Body.KINEMATIC;
+                            obstacles.push({ ...p, type: 'tilt', speed: 1.5, offset: i });
+                        }
+                        currentPos.x += 25;
+                        break;
+                    case 'finish':
+                        finishLineX = currentPos.x;
+                        createBox(20, 1, 20, currentPos.x + 10, currentPos.y, currentPos.z, 0xffd700);
+                        const arch = createBox(2, 8, 10, currentPos.x, currentPos.y + 4.5, currentPos.z, 0xffd700);
+                        arch.mesh.material.transparent = true;
+                        arch.mesh.material.opacity = 0.5;
+                        arch.body.collisionFilterGroup = 0;
+                        break;
+                }
+            });
+        }
+
+        // --- Actors ---
+        function createHumanoid(color) {
+            const group = new THREE.Group();
+            
+            const headGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+            const headMat = new THREE.MeshPhongMaterial({ color: 0xffccaa }); 
+            const head = new THREE.Mesh(headGeo, headMat);
+            head.position.y = 0.85; head.castShadow = true;
+            group.add(head);
+
+            const bodyGeo = new THREE.BoxGeometry(0.6, 0.7, 0.35);
+            const bodyMat = new THREE.MeshPhongMaterial({ color: color }); 
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.position.y = 0.2; body.castShadow = true;
+            group.add(body);
+
+            const armGeo = new THREE.BoxGeometry(0.2, 0.7, 0.2);
+            const armMat = new THREE.MeshPhongMaterial({ color: 0xffccaa });
+            
+            const armL = new THREE.Mesh(armGeo, armMat);
+            armL.position.set(-0.45, 0.2, 0); armL.name = "armL"; armL.castShadow = true;
+            group.add(armL);
+
+            const armR = new THREE.Mesh(armGeo, armMat);
+            armR.position.set(0.45, 0.2, 0); armR.name = "armR"; armR.castShadow = true;
+            group.add(armR);
+
+            const legGeo = new THREE.BoxGeometry(0.22, 0.8, 0.22);
+            const legMat = new THREE.MeshPhongMaterial({ color: 0x333333 }); 
+            
+            const legL = new THREE.Mesh(legGeo, legMat);
+            legL.position.set(-0.2, -0.6, 0); legL.name = "legL"; legL.castShadow = true;
+            group.add(legL);
+
+            const legR = new THREE.Mesh(legGeo, legMat);
+            legR.position.set(0.2, -0.6, 0); legR.name = "legR"; legR.castShadow = true;
+            group.add(legR);
+
+            return group;
+        }
+
+        function createPlayer() {
+            const mesh = createHumanoid(0x00ff00); 
+            scene.add(mesh);
+            playerMesh = mesh;
+            window.playerMesh = mesh;
+
+            const shape = new CANNON.Sphere(0.6);
+            playerBody = new CANNON.Body({ mass: 1, fixedRotation: true, material: world.defaultMaterial });
+            playerBody.addShape(shape);
+            playerBody.position.set(-5, 5, 0);
+            playerBody.linearDamping = 0.0;
+            world.addBody(playerBody);
+
+            player = { mesh, body: playerBody, isPlayer: true };
+            window.playerBody = playerBody;
+        }
+
+        // --- Game Logic ---
+        function updatePhysics() {
+            world.step(1/60);
+
+            let isGrounded = false;
+            for(let i = 0; i < world.contacts.length; i++) {
+                const c = world.contacts[i];
+                if(c.bi === playerBody || c.bj === playerBody) {
+                    if(c.bi === playerBody) { if(c.ni.y < -0.5) isGrounded = true; } 
+                    else { if(c.ni.y > 0.5) isGrounded = true; }
+                }
+            }
+
+            const time = Date.now() * 0.001;
+            
+            obstacles.forEach(obs => {
+                if(obs.type === 'spinner') {
+                    obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), time * obs.speed);
+                } else if(obs.type === 'tilt') {
+                    obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), Math.sin(time * obs.speed + obs.offset) * 0.5);
+                }
+                obs.mesh.position.copy(obs.body.position);
+                obs.mesh.quaternion.copy(obs.body.quaternion);
+            });
+
+            if(gameActive) {
+                // --- OPPONENT SYNC & RENDER ---
+                // We iterate over the window.opponentsData object which is updated by Firestore
+                for (const uid in window.opponentsData) {
+                    const data = window.opponentsData[uid];
+                    if (!opponents[uid]) {
+                        // New player connected! Create mesh.
+                        const mesh = createHumanoid(0xff0000); // Red for enemies
+                        scene.add(mesh);
+                        opponents[uid] = { mesh: mesh };
+                    }
+                    
+                    // Simple Lerp (Interpolation) for smoothness
+                    const mesh = opponents[uid].mesh;
+                    if (data.state) {
+                        mesh.position.lerp(new THREE.Vector3(data.state.x, data.state.y - 0.1, data.state.z), 0.1);
+                        // For rotation, we just set it or lerp it. Simplest is direct set for now.
+                        mesh.rotation.y = data.state.rot;
+                    }
+                }
+                // Cleanup disconnected players
+                for (const uid in opponents) {
+                    if (!window.opponentsData[uid]) {
+                        scene.remove(opponents[uid].mesh);
+                        delete opponents[uid];
+                    }
+                }
+
+                // --- PLAYER CONTROLS ---
+                const baseSpeed = 20;
+                const maxSpeed = 50; 
+                const acceleration = 0.3;
+                const deceleration = 0.5;
+
+                if (keys.w) {
+                    playerMomentum = Math.min(playerMomentum + acceleration, maxSpeed);
+                } else {
+                    playerMomentum = Math.max(playerMomentum - deceleration, baseSpeed);
+                }
+                
+                const pct = ((playerMomentum - baseSpeed) / (maxSpeed - baseSpeed)) * 100;
+                document.getElementById('speed-bar').style.width = `${pct}%`;
+
+                const force = new CANNON.Vec3(0, 0, 0);
+                
+                const fwdX = Math.cos(cameraAngle);
+                const fwdZ = Math.sin(cameraAngle);
+                const rightX = -Math.sin(cameraAngle);
+                const rightZ = Math.cos(cameraAngle);
+
+                if(keys.w) { force.x += fwdX * playerMomentum; force.z += fwdZ * playerMomentum; }
+                if(keys.s) { force.x -= fwdX * (playerMomentum * 0.6); force.z -= fwdZ * (playerMomentum * 0.6); }
+                if(keys.a) { force.x -= rightX * (playerMomentum * 0.8); force.z -= rightZ * (playerMomentum * 0.8); }
+                if(keys.d) { force.x += rightX * (playerMomentum * 0.8); force.z += rightZ * (playerMomentum * 0.8); }
+                
+                playerBody.velocity.x = force.x * 0.5; 
+                playerBody.velocity.z = force.z * 0.5;
+
+                if(keys.w && Math.abs(playerBody.velocity.y) > 0.5) {
+                    playerBody.velocity.x += fwdX * 0.2;
+                    playerBody.velocity.z += fwdZ * 0.2;
+                }
+
+                if(keys.space && isGrounded) {
+                    playerBody.velocity.y = 20;
+                }
+
+                if(playerBody.position.y < -30) {
+                    playerBody.position.set(-5, 5, 0);
+                    playerBody.velocity.set(0, 0, 0);
+                    playerMomentum = baseSpeed;
+                    updateCommentary('fall');
+                }
+
+                checkFinish();
+            }
+
+            // Sync LOCAL player mesh
+            if(player) {
+                player.mesh.position.copy(player.body.position);
+                player.mesh.position.y -= 0.1; 
+                
+                const vel = player.body.velocity;
+                const speed = Math.sqrt(vel.x*vel.x + vel.z*vel.z);
+
+                if(speed > 0.5) {
+                      player.mesh.rotation.y = Math.atan2(vel.x, vel.z); 
+                }
+
+                // Animation logic shared for all beans could be added here
+                // For now just animate local player limbs
+                const armL = player.mesh.getObjectByName('armL');
+                const armR = player.mesh.getObjectByName('armR');
+                const legL = player.mesh.getObjectByName('legL');
+                const legR = player.mesh.getObjectByName('legR');
+
+                if(speed > 1 && player.body.position.y > -10) {
+                    const runTime = Date.now() * 0.015;
+                    if(armL) armL.rotation.x = Math.sin(runTime) * 0.8;
+                    if(armR) armR.rotation.x = -Math.sin(runTime) * 0.8;
+                    if(legL) legL.rotation.x = -Math.sin(runTime) * 0.8;
+                    if(legR) legR.rotation.x = Math.sin(runTime) * 0.8;
+                } else {
+                    if(armL) armL.rotation.x = 0;
+                    if(armR) armR.rotation.x = 0;
+                    if(legL) legL.rotation.x = 0;
+                    if(legR) legR.rotation.x = 0;
+                }
+            }
+        }
+
+        function checkFinish() {
+            if(!hasFinished && playerBody.position.x > finishLineX) {
+                hasFinished = true;
+                window.hasFinished = true;
+                showEndScreen();
+                updateCommentary('finish');
+            }
+            
+            // Calculate Rank based on opponents data
+            let myX = playerBody.position.x;
+            let countAhead = 0;
+            for(const uid in window.opponentsData) {
+                if(window.opponentsData[uid].state && window.opponentsData[uid].state.x > myX) {
+                    countAhead++;
+                }
+            }
+            document.getElementById('rank').innerText = `Rank: ${countAhead + 1}`;
+        }
+
+        function showEndScreen() {
+            gameActive = false;
+            window.gameActive = false;
+            document.exitPointerLock();
+            const winScreen = document.getElementById('win-screen');
+            const winText = document.getElementById('win-text');
+            winScreen.style.display = 'block';
+            winText.innerText = "FINISHED!";
+            winText.style.color = "#44cc44";
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            updatePhysics();
+            
+            if(playerBody) {
+                const targetPos = playerBody.position;
+                const radius = 14;
+                const camHeight = 10;
+                const camX = targetPos.x - radius * Math.cos(cameraAngle);
+                const camZ = targetPos.z - radius * Math.sin(cameraAngle);
+                camera.position.lerp(new THREE.Vector3(camX, targetPos.y + camHeight, camZ), 0.1);
+                camera.lookAt(targetPos.x, targetPos.y + 2, targetPos.z);
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('load', () => {
+            init();
+        });
+    </script>
+</body>
+</html>
