@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bean Royale - Multiplayer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- CONFIGURATION SECTION ---
+        
+        // PASTE YOUR FIREBASE CONFIG HERE IF DEPLOYING TO VERCEL
+        // (You can get this from Project Settings > General > Your Apps in Firebase Console)
+        const myFirebaseConfig = {
+            apiKey: "AIzaSyAZcHTFks9pRqcHncpeF6s5ZjmGLHHe5MQ",
+            authDomain: "tumble-dudes-4330d.firebaseapp.com",
+            projectId: "tumble-dudes-4330d",
+            storageBucket: "tumble-dudes-4330d.firebasestorage.app",
+            messagingSenderId: "565414083389",
+            appId: "1:565414083389:web:adfa327e7afcbd58746354"
+        };
+        // -----------------------------
+
+        // Detect Environment (Preview vs Vercel/Production)
+        let firebaseConfig;
+        let appId;
+        
+        try {
+            // Try to use the Preview environment variables
+            firebaseConfig = JSON.parse(__firebase_config);
+            appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        } catch (e) {
+            // Fallback to manual config (for Vercel deployment)
+            console.log("Using manual Firebase config");
+            firebaseConfig = myFirebaseConfig;
+            appId = "bean-royale-prod";
+        }
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        
+        window.db = db;
+        window.auth = auth;
+        window.appId = appId;
+        
+        let currentUser = null;
+        let currentLobbyId = null;
+        let isHost = false;
+        let lobbyUnsubscribe = null;
+        let playersUnsubscribe = null;
+        let myUsername = "Bean";
+
+        // Auth Flow
+        const initAuth = async () => {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    throw new Error("No custom token");
+                }
+            } catch (e) {
+                // Standard anonymous login for Vercel deployment
+                await signInAnonymously(auth);
+            }
+        };
+
+        initAuth();
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                console.log("Logged in as", user.uid);
+                document.getElementById('auth-status').innerText = "Connected to Server";
+                document.getElementById('lobby-ui').style.display = 'flex';
+                document.getElementById('loading-overlay').style.display = 'none';
+            }
+        });
+
+        // --- Network Logic ---
+        
+        window.createLobby = async () => {
+            if (!currentUser) return;
+            const username = document.getElementById('username-input').value || "Host Bean";
+            myUsername = username;
+            
+            const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+            currentLobbyId = code;
+            isHost = true;
+
+            const lobbyRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code);
+            
+            await setDoc(lobbyRef, {
+                hostId: currentUser.uid,
+                status: 'waiting',
+                levelSegments: [], 
+                createdAt: serverTimestamp()
+            });
+
+            const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code, 'players', currentUser.uid);
+            await setDoc(playerRef, {
+                username: username,
+                isHost: true,
+                joinedAt: serverTimestamp(),
+                state: { x: -5, y: 5, z: 0, rot: 0, finished: false }
+            });
+
+            enterLobbyUI(code);
+        }
+
+        window.joinLobby = async () => {
+            if (!currentUser) return;
+            const code = document.getElementById('code-input').value.toUpperCase();
+            const username = document.getElementById('username-input').value || "Guest Bean";
+            
+            if(!code) { alert("Enter a code!"); return; }
+            
+            myUsername = username;
+            currentLobbyId = code;
+            isHost = false;
+
+            const lobbyRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code);
+            const snap = await getDoc(lobbyRef);
+
+            if (!snap.exists()) {
+                alert("Lobby not found!");
+                return;
+            }
+
+            const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code, 'players', currentUser.uid);
+            await setDoc(playerRef, {
+                username: username,
+                isHost: false,
+                joinedAt: serverTimestamp(),
+                state: { x: -5, y: 5, z: 0, rot: 0, finished: false }
+            });
+
+            enterLobbyUI(code);
+        }
+
+        function enterLobbyUI(code) {
+            document.getElementById('main-menu').style.display = 'none';
+            document.getElementById('wait-room').style.display = 'flex';
+            document.getElementById('lobby-code-display').innerText = code;
+
+            if(!isHost) document.getElementById('start-btn').style.display = 'none';
+
+            const lobbyRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code);
+            lobbyUnsubscribe = onSnapshot(lobbyRef, (doc) => {
+                const data = doc.data();
+                if (data && data.status === 'playing') {
+                    document.getElementById('ui').style.display = 'block'; 
+                    document.getElementById('lobby-ui').style.display = 'none';
+                    window.startMultiplayerGame(data.levelSegments);
+                }
+            });
+
+            const playersRef = collection(db, 'artifacts', appId, 'public', 'data', 'lobbies', code, 'players');
+            playersUnsubscribe = onSnapshot(playersRef, (snapshot) => {
+                const list = document.getElementById('player-list');
+                list.innerHTML = '';
+                window.opponentsData = {}; 
+                
+                let count = 0;
+                snapshot.forEach(doc => {
+                    const p = doc.data();
+                    const li = document.createElement('li');
+                    li.innerText = `${p.username} ${p.isHost ? '👑' : ''}`;
+                    list.appendChild(li);
+                    
+                    if (doc.id !== currentUser.uid) {
+                        window.opponentsData[doc.id] = p; 
+                    }
+                    count++;
+                });
+                document.getElementById('player-count').innerText = `${count} / 6 Players`;
+            });
+        }
+
+        window.hostStartGame = async () => {
+            if(!isHost) return;
+            const level = window.generateRandomLevelStructure(); 
+            
+            const lobbyRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', currentLobbyId);
+            await updateDoc(lobbyRef, {
+                status: 'playing',
+                levelSegments: level
+            });
+        }
+
+        // Properly reset state without reload
+        window.backToMenu = function() {
+            // UI Reset
+            document.getElementById('win-screen').style.display = 'none';
+            document.getElementById('ui').style.display = 'none';
+            document.getElementById('lobby-ui').style.display = 'flex';
+            document.getElementById('main-menu').style.display = 'block';
+            document.getElementById('wait-room').style.display = 'none';
+
+            // Game State Reset
+            window.gameActive = false;
+            window.hasFinished = false;
+            window.playerMomentum = 20;
+            currentLobbyId = null;
+            isHost = false;
+
+            // Cleanup Network Listeners
+            if (lobbyUnsubscribe) { lobbyUnsubscribe(); lobbyUnsubscribe = null; }
+            if (playersUnsubscribe) { playersUnsubscribe(); playersUnsubscribe = null; }
+
+            // Cleanup Scene
+            window.clearLevel(); // Uses global function exposed below
+            if (window.playerBody) {
+                // We rely on the global clear logic, but ensure player is removed
+                // The main script will handle reconstruction on new game
+            }
+            window.opponentsData = {};
+            
+            // Randomize Music
+            window.changeMusicTrack();
+        }
+
+        setInterval(async () => {
+            if (window.gameActive && currentUser && currentLobbyId) {
+                const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', currentLobbyId, 'players', currentUser.uid);
+                updateDoc(playerRef, {
+                    "state.x": window.playerBody.position.x,
+                    "state.y": window.playerBody.position.y,
+                    "state.z": window.playerBody.position.z,
+                    "state.rot": window.playerMesh.rotation.y, 
+                    "state.finished": window.hasFinished
+                }).catch(e => {}); 
+            }
+        }, 100); 
+
+    </script>
+
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #222; }
+        
+        /* Lobby UI Styles */
+        #lobby-ui {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(135deg, #6a0dad, #222);
+            display: none; /* Flex when active */
+            flex-direction: column; align-items: center; justify-content: center;
+            z-index: 100; color: white;
+        }
+
+        .panel {
+            background: rgba(0,0,0,0.8); padding: 40px; border-radius: 20px;
+            border: 2px solid #ff00ff; text-align: center; width: 300px;
+            box-shadow: 0 0 30px rgba(255, 0, 255, 0.3);
+        }
+
+        input {
+            width: 100%; padding: 12px; margin: 10px 0; background: #333;
+            border: 1px solid #555; color: white; border-radius: 8px; box-sizing: border-box;
+            text-transform: uppercase; text-align: center; letter-spacing: 2px;
+        }
+
+        button.btn-primary {
+            width: 100%; padding: 12px; background: #ff00ff; color: white;
+            border: none; border-radius: 8px; font-weight: bold; cursor: pointer;
+            margin-top: 10px; transition: 0.2s;
+        }
+        button.btn-primary:hover { background: #d400d4; transform: scale(1.02); }
+
+        #player-list {
+            list-style: none; padding: 0; margin: 20px 0; text-align: left;
+            max-height: 200px; overflow-y: auto;
+        }
+        #player-list li {
+            padding: 8px; border-bottom: 1px solid #444; font-size: 1.1em;
+        }
+
+        #code-display {
+            font-size: 3em; font-family: monospace; color: #00ffff;
+            margin: 10px 0; letter-spacing: 5px;
+        }
+
+        #loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #111; z-index: 200; color: #ff00ff;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.5em;
+        }
+
+        /* Game UI */
+        #ui {
+            position: absolute; top: 20px; left: 20px; color: white; pointer-events: none;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8); z-index: 10;
+            display: none; /* Hidden until game starts */
+            flex-direction: column; gap: 10px;
+        }
+
+        #speed-meter {
+            width: 200px; height: 20px; background: rgba(0,0,0,0.5);
+            border: 2px solid white; border-radius: 10px; overflow: hidden;
+            margin-top: 5px;
+        }
+        #speed-bar {
+            width: 0%; height: 100%; background: linear-gradient(90deg, #ffff00, #ff0000);
+            transition: width 0.1s;
+        }
+
+        #commentary-box {
+            background: rgba(0, 0, 0, 0.6);
+            padding: 10px 15px;
+            border-radius: 8px;
+            border-left: 4px solid #ff00ff;
+            max-width: 400px;
+            font-style: italic;
+            font-size: 1.1rem;
+            color: #fff;
+            margin-top: 10px;
+            transition: opacity 0.5s;
+            opacity: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        #win-screen {
+            display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.95); padding: 40px; border-radius: 20px;
+            text-align: center; color: #333; box-shadow: 0 0 50px rgba(0,0,0,0.5); z-index: 20;
+        }
+
+        .mute-btn {
+            position: absolute; bottom: 20px; left: 20px; z-index: 90;
+            background: rgba(0,0,0,0.5); padding: 5px 10px; font-size: 0.8rem;
+            pointer-events: auto !important; color: white; border: 1px solid white; border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading-overlay">Loading Servers...</div>
+
+    <!-- Lobby UI -->
+    <div id="lobby-ui">
+        <h1 style="margin-bottom: 0;">BEAN ROYALE</h1>
+        <p style="color: #ccc; margin-top: 5px;">Multiplayer Edition</p>
+        
+        <div id="auth-status" style="margin-bottom: 20px; color: #00ffff;">Connecting...</div>
+
+        <!-- Main Menu -->
+        <div id="main-menu" class="panel">
+            <input type="text" id="username-input" placeholder="USERNAME" maxlength="10">
+            <div style="border-top: 1px solid #444; margin: 20px 0;"></div>
+            <button class="btn-primary" onclick="window.createLobby()">HOST GAME</button>
+            <div style="margin: 15px 0; color: #aaa;">- OR -</div>
+            <input type="text" id="code-input" placeholder="ENTER CODE">
+            <button class="btn-primary" onclick="window.joinLobby()">JOIN GAME</button>
+        </div>
+
+        <!-- Wait Room -->
+        <div id="wait-room" class="panel" style="display: none;">
+            <h3>LOBBY CODE</h3>
+            <div id="code-display"><span id="lobby-code-display">??????</span></div>
+            <div id="player-count">1 / 6 Players</div>
+            <ul id="player-list">
+                <!-- Players go here -->
+            </ul>
+            <button id="start-btn" class="btn-primary" onclick="window.hostStartGame()">START RACE</button>
+            <p style="font-size: 0.8em; color: #aaa; margin-top: 10px;">Waiting for host...</p>
+            <button onclick="window.backToMenu()" style="background:transparent; border:1px solid #555; font-size:0.8em; margin-top:20px;">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Game UI -->
+    <div id="ui">
+        <div>
+            <h1 style="margin:0;">BEAN ROYALE</h1>
+            <div id="rank">Rank: -- / --</div>
+            <div id="speed-meter"><div id="speed-bar"></div></div>
+        </div>
+        <div id="commentary-box">
+            <span id="commentary-wave">🔊</span>
+            <span id="commentary-text">waiting for sportscaster...</span>
+        </div>
+    </div>
+
+    <button class="mute-btn" onclick="toggleMusic()">🎵 Toggle Music</button>
+
+    <div id="win-screen">
+        <h2 id="win-text">FINISHED!</h2>
+        <p id="rank-detail"></p>
+        <button onclick="window.backToMenu()">BACK TO MENU</button>
+    </div>
+
+    <script>
+        // --- No API Key Needed ---
+        
+        // --- Three/Cannon Vars ---
+        let scene, camera, renderer, world;
+        let player, playerBody, playerMesh; // Global for networking
+        let opponents = {}; // Map of userId -> { mesh, targetPos, targetRot }
+        window.opponentsData = {}; // Raw data from Firestore
+        let obstacles = [];
+        let gameActive = false;
+        let finishLineX = 0;
+        let lastCommentaryTime = 0;
+        let playerMomentum = 20; 
+        let hasFinished = false;
+        
+        // Expose globals for Module script
+        window.playerBody = null;
+        window.playerMesh = null;
+        window.gameActive = false;
+        window.hasFinished = false;
+
+        // Camera State
+        let cameraAngle = 0;
+        let isPointerLocked = false;
+        
+        // Audio
+        let audioCtx;
+        let isMuted = false;
+        let noteIndex = 0;
+        let isPlayingMusic = false;
+        let currentTrack = null;
+        
+        const keys = { w: false, a: false, s: false, d: false, space: false };
+        
+        // --- Initialization ---
+        function init() {
+            if (typeof THREE === 'undefined' || typeof CANNON === 'undefined') {
+                console.error("Three.js or Cannon.js not loaded.");
+                return;
+            }
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x6a0dad); 
+            scene.fog = new THREE.FogExp2(0x6a0dad, 0.006);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+            scene
