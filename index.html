@@ -9,7 +9,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore,, doc, setDoc, getDoc, getDocs, onSnapshot, updateDoc, deleteDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, doc, setDoc, getDoc, getDocs, onSnapshot, updateDoc, deleteDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Firebase Config & Globals ---
         // --- CONFIGURATION SECTION ---
@@ -29,8 +29,13 @@
         
         try {
             // Attempt to use Preview environment config first
-            firebaseConfig = JSON.parse(__firebase_config);
-            appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            // We use typeof check to avoid ReferenceError issues in some build environments
+            if (typeof __firebase_config !== 'undefined') {
+                firebaseConfig = JSON.parse(__firebase_config);
+                appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            } else {
+                throw new Error("No env config");
+            }
         } catch (e) {
             // Fallback to manual config for Production/Vercel
             console.log("Using manual Firebase config (Production Mode)");
@@ -411,6 +416,7 @@
             <div style="margin: 15px 0; color: #aaa;">- OR -</div>
             <input type="text" id="code-input" placeholder="ENTER CODE">
             <button class="btn-primary" onclick="window.joinLobby()">JOIN GAME</button>
+            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">v2.1 (Production Ready)</div>
         </div>
 
         <!-- Wait Room -->
@@ -1158,4 +1164,3 @@
     </script>
 </body>
 </html>
-
