@@ -573,7 +573,7 @@
             <div style="margin: 15px 0; color: #aaa;">- OR -</div>
             <input type="text" id="code-input" placeholder="ENTER CODE">
             <button class="btn-primary" onclick="window.joinLobby()">JOIN GAME</button>
-            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">v3.3 (2D Skyboxes)</div>
+            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">v3.4 (Animations & Skyboxes)</div>
         </div>
 
         <!-- Wait Room -->
@@ -622,7 +622,7 @@
         // --- Three/Cannon Vars ---
         let scene, camera, renderer, world;
         let player, playerBody, playerMesh; // Global for networking
-        let opponents = {}; // Map of userId -> { mesh, targetPos, targetRot }
+        let opponents = {}; // Map of userId -> { mesh, targetPos, targetRot, lastPos }
         window.opponentsData = {}; // Raw data from Firestore
         let obstacles = [];
         let gameActive = false;
@@ -882,8 +882,9 @@
 
         function generateSkyboxTexture(theme) {
             const canvas = document.createElement('canvas');
-            canvas.width = 1024;
-            canvas.height = 512;
+            // High Res Canvas for clearer details
+            canvas.width = 4096;
+            canvas.height = 2048;
             const ctx = canvas.getContext('2d');
             const w = canvas.width;
             const h = canvas.height;
@@ -898,21 +899,21 @@
                 
                 // Stars
                 ctx.fillStyle = '#ffffff';
-                for(let i=0; i<300; i++) {
+                for(let i=0; i<800; i++) {
                     const x = Math.random() * w;
                     const y = Math.random() * h;
-                    const r = Math.random() * 1.5;
+                    const r = Math.random() * 2;
                     ctx.beginPath();
                     ctx.arc(x, y, r, 0, Math.PI*2);
                     ctx.fill();
                 }
                 
-                // Nebula
-                ctx.fillStyle = 'rgba(255, 0, 255, 0.1)';
-                for(let i=0; i<5; i++) {
+                // Nebula clouds
+                ctx.fillStyle = 'rgba(100, 0, 255, 0.05)';
+                for(let i=0; i<20; i++) {
                     const x = Math.random() * w;
                     const y = Math.random() * h;
-                    const r = 50 + Math.random() * 100;
+                    const r = 200 + Math.random() * 400;
                     ctx.beginPath();
                     ctx.arc(x, y, r, 0, Math.PI*2);
                     ctx.fill();
@@ -921,17 +922,17 @@
             } else if (theme === 1) {
                 // Sunny Day
                 const grad = ctx.createLinearGradient(0, 0, 0, h);
-                grad.addColorStop(0, '#00BFFF'); // Deep Sky Blue
-                grad.addColorStop(1, '#87CEFA'); // Light Sky Blue
+                grad.addColorStop(0, '#00BFFF'); 
+                grad.addColorStop(1, '#FFFFFF'); 
                 ctx.fillStyle = grad;
                 ctx.fillRect(0, 0, w, h);
 
-                // Clouds
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-                for(let i=0; i<20; i++) {
+                // Fluffy Clouds
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                for(let i=0; i<50; i++) {
                     const x = Math.random() * w;
-                    const y = Math.random() * (h/2); // Upper half
-                    const r = 20 + Math.random() * 40;
+                    const y = Math.random() * (h/2); 
+                    const r = 50 + Math.random() * 100;
                     ctx.beginPath();
                     ctx.arc(x, y, r, 0, Math.PI*2);
                     ctx.arc(x+r*0.7, y-r*0.2, r*0.8, 0, Math.PI*2);
@@ -942,32 +943,32 @@
             } else if (theme === 2) {
                 // Synth Sunset
                 const grad = ctx.createLinearGradient(0, 0, 0, h);
-                grad.addColorStop(0, '#4B0082'); // Indigo
-                grad.addColorStop(0.6, '#FF4500'); // OrangeRed
-                grad.addColorStop(1, '#FFD700'); // Gold
+                grad.addColorStop(0, '#4B0082'); 
+                grad.addColorStop(0.5, '#FF4500'); 
+                grad.addColorStop(1, '#FFD700'); 
                 ctx.fillStyle = grad;
                 ctx.fillRect(0, 0, w, h);
 
                 // Sun
-                const gradSun = ctx.createRadialGradient(w/2, h*0.8, 10, w/2, h*0.8, 80);
+                const gradSun = ctx.createRadialGradient(w/2, h*0.7, 10, w/2, h*0.7, 150);
                 gradSun.addColorStop(0, '#ffffcc');
                 gradSun.addColorStop(1, 'rgba(255, 255, 0, 0)');
                 ctx.fillStyle = gradSun;
                 ctx.beginPath();
-                ctx.arc(w/2, h*0.8, 80, 0, Math.PI*2);
+                ctx.arc(w/2, h*0.7, 150, 0, Math.PI*2);
                 ctx.fill();
 
-                // Mountains (Silhouette)
-                ctx.fillStyle = '#220022';
-                ctx.beginPath();
-                ctx.moveTo(0, h);
-                for(let i=0; i<=w; i+=50) {
-                    ctx.lineTo(i, h - 50 - Math.random()*100);
+                // Grid Horizon
+                ctx.strokeStyle = 'rgba(255,0,255,0.2)';
+                ctx.lineWidth = 4;
+                for(let i=0; i<w; i+=100) {
+                    ctx.beginPath();
+                    ctx.moveTo(w/2, h/2);
+                    ctx.lineTo(i, h);
+                    ctx.stroke();
                 }
-                ctx.lineTo(w, h);
-                ctx.fill();
 
-            } else {
+            } else if (theme === 3) {
                 // Cyber Grid
                 const grad = ctx.createLinearGradient(0, 0, 0, h);
                 grad.addColorStop(0, '#000000');
@@ -976,23 +977,82 @@
                 ctx.fillRect(0, 0, w, h);
 
                 // Grid lines
-                ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
-                ctx.lineWidth = 2;
+                ctx.strokeStyle = 'rgba(0, 255, 255, 0.5)';
+                ctx.lineWidth = 3;
                 
-                // Horizon perspective lines
-                for(let i=0; i<w; i+=80) {
+                for(let i=0; i<w; i+=150) {
                     ctx.beginPath();
-                    ctx.moveTo(w/2, h/2); // Vanishing pointish
+                    ctx.moveTo(w/2, h/2);
                     ctx.lineTo(i, h);
                     ctx.stroke();
                 }
-                
-                // Horizontal lines
-                for(let i=h/2; i<h; i+=40) {
+                for(let i=h/2; i<h; i+=60) {
                     ctx.beginPath();
                     ctx.moveTo(0, i);
                     ctx.lineTo(w, i);
                     ctx.stroke();
+                }
+            } else if (theme === 4) {
+                // Midnight City
+                const grad = ctx.createLinearGradient(0, 0, 0, h);
+                grad.addColorStop(0, '#000033'); // Dark Blue
+                grad.addColorStop(1, '#440044'); // Purple bottom
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, w, h);
+                
+                // City Skyline
+                ctx.fillStyle = '#000000';
+                let x = 0;
+                while(x < w) {
+                    let bw = 30 + Math.random() * 80;
+                    let bh = 50 + Math.random() * 200;
+                    ctx.fillRect(x, h - bh, bw, bh);
+                    
+                    // Windows
+                    ctx.fillStyle = Math.random() > 0.5 ? '#ffff00' : '#00ffff';
+                    for(let wy = h-bh+10; wy < h; wy+=20) {
+                        if(Math.random() > 0.3) ctx.fillRect(x+5, wy, 5, 10);
+                        if(Math.random() > 0.3) ctx.fillRect(x+bw-15, wy, 5, 10);
+                    }
+                    ctx.fillStyle = '#000000'; // Reset for next building
+                    x += bw;
+                }
+            } else if (theme === 5) {
+                // Candy Land
+                const grad = ctx.createLinearGradient(0, 0, 0, h);
+                grad.addColorStop(0, '#FFC0CB'); // Pink
+                grad.addColorStop(1, '#E0FFFF'); // Light Cyan
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, w, h);
+                
+                // Pastel Clouds
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                for(let i=0; i<30; i++) {
+                    const x = Math.random() * w;
+                    const y = Math.random() * h/1.5;
+                    const r = 40 + Math.random() * 60;
+                    ctx.beginPath();
+                    ctx.arc(x, y, r, 0, Math.PI*2);
+                    ctx.arc(x+r, y, r*0.8, 0, Math.PI*2);
+                    ctx.fill();
+                }
+            } else {
+                // Toxic Storm
+                const grad = ctx.createLinearGradient(0, 0, 0, h);
+                grad.addColorStop(0, '#2F4F4F'); // Dark Slate Gray
+                grad.addColorStop(1, '#006400'); // Dark Green
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, w, h);
+                
+                // Smog
+                ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
+                for(let i=0; i<100; i++) {
+                    const x = Math.random() * w;
+                    const y = Math.random() * h;
+                    const r = 100 + Math.random() * 200;
+                    ctx.beginPath();
+                    ctx.arc(x, y, r, 0, Math.PI*2);
+                    ctx.fill();
                 }
             }
 
@@ -1005,17 +1065,20 @@
             backgroundObjects.forEach(obj => scene.remove(obj));
             backgroundObjects = [];
 
-            const theme = Math.floor(Math.random() * 4);
+            const theme = Math.floor(Math.random() * 7); // 7 themes now
             const texture = generateSkyboxTexture(theme);
             
             // Adjust Fog based on theme
-            if (theme === 0) scene.fog = new THREE.FogExp2(0x110022, 0.002);
-            else if (theme === 1) scene.fog = new THREE.FogExp2(0x87CEFA, 0.002);
-            else if (theme === 2) scene.fog = new THREE.FogExp2(0x4B0082, 0.0025);
-            else scene.fog = new THREE.FogExp2(0x001133, 0.003);
+            if (theme === 0) scene.fog = new THREE.FogExp2(0x110022, 0.002); // Space
+            else if (theme === 1) scene.fog = new THREE.FogExp2(0x87CEFA, 0.002); // Sunny
+            else if (theme === 2) scene.fog = new THREE.FogExp2(0x4B0082, 0.0025); // Sunset
+            else if (theme === 3) scene.fog = new THREE.FogExp2(0x001133, 0.003); // Cyber
+            else if (theme === 4) scene.fog = new THREE.FogExp2(0x220022, 0.003); // City
+            else if (theme === 5) scene.fog = new THREE.FogExp2(0xFFC0CB, 0.002); // Candy
+            else scene.fog = new THREE.FogExp2(0x003300, 0.004); // Toxic
 
             // Create huge sphere
-            const geo = new THREE.SphereGeometry(800, 32, 32); // 800 Radius
+            const geo = new THREE.SphereGeometry(800, 60, 40); // Higher poly for smoothness
             // BackSide to view from inside, fog: false to keep it vivid
             const mat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide, fog: false });
             const skybox = new THREE.Mesh(geo, mat);
@@ -1493,15 +1556,45 @@
                         // New player connected! Create mesh.
                         const mesh = createHumanoid(0xff0000); // Red for enemies
                         scene.add(mesh);
-                        opponents[uid] = { mesh: mesh };
+                        opponents[uid] = { 
+                            mesh: mesh, 
+                            lastPos: new THREE.Vector3(data.state.x, data.state.y, data.state.z) 
+                        };
                     }
                     
-                    // Simple Lerp (Interpolation) for smoothness
-                    const mesh = opponents[uid].mesh;
-                    if (data.state) {
-                        mesh.position.lerp(new THREE.Vector3(data.state.x, data.state.y - 0.1, data.state.z), 0.1);
-                        // For rotation, we just set it or lerp it. Simplest is direct set for now.
-                        mesh.rotation.y = data.state.rot;
+                    const opp = opponents[uid];
+                    
+                    // Determine if opponent is moving for animation
+                    let speed = 0;
+                    if(data.state) {
+                        const currentPos = new THREE.Vector3(data.state.x, data.state.y, data.state.z);
+                        // Approximate speed based on distance moved since last frame
+                        speed = currentPos.distanceTo(opp.lastPos) * 60; // scale up for animation logic
+                        opp.lastPos.copy(currentPos); // update last pos
+
+                        // Lerp Position
+                        opp.mesh.position.lerp(new THREE.Vector3(data.state.x, data.state.y - 0.1, data.state.z), 0.1);
+                        opp.mesh.rotation.y = data.state.rot;
+                    }
+
+                    // --- ANIMATE OPPONENT ---
+                    const armL = opp.mesh.getObjectByName('armL');
+                    const armR = opp.mesh.getObjectByName('armR');
+                    const legL = opp.mesh.getObjectByName('legL');
+                    const legR = opp.mesh.getObjectByName('legR');
+
+                    if(speed > 0.5) { // Threshold for animation
+                        const runTime = Date.now() * 0.015;
+                        if(armL) armL.rotation.x = Math.sin(runTime) * 0.8;
+                        if(armR) armR.rotation.x = -Math.sin(runTime) * 0.8;
+                        if(legL) legL.rotation.x = -Math.sin(runTime) * 0.8;
+                        if(legR) legR.rotation.x = Math.sin(runTime) * 0.8;
+                    } else {
+                        // Idle
+                        if(armL) armL.rotation.x = 0;
+                        if(armR) armR.rotation.x = 0;
+                        if(legL) legL.rotation.x = 0;
+                        if(legR) legR.rotation.x = 0;
                     }
                 }
                 // Cleanup disconnected players
