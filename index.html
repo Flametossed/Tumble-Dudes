@@ -776,6 +776,7 @@
         // --- Level System ---
         let levelObjects = [];
         let currentPos = { x: -5, y: -0.5, z: 0 };
+        let levelMinY = -0.5;
 
         function createBox(w, h, d, x, y, z, color, mass=0, rotX=0, rotY=0, rotZ=0) {
             const geo = new THREE.BoxGeometry(w, h, d);
@@ -797,7 +798,7 @@
 
         window.clearLevel = function() {
             levelObjects.forEach(obj => { scene.remove(obj.mesh); world.removeBody(obj.body); });
-            levelObjects = []; obstacles = []; currentPos = { x: -5, y: -0.5, z: 0 };
+            levelObjects = []; obstacles = []; currentPos = { x: -5, y: -0.5, z: 0 }; levelMinY = -0.5;
             currentRespawnPos = { x: -5, y: 5, z: 0 }; checkpointPos = null; checkpointActivated = false; window.checkpointFlagMat = null;
             if(player) { scene.remove(player.mesh); world.removeBody(player.body); player = null; window.playerBody = null; window.playerMesh = null; }
             for(let uid in opponents) { scene.remove(opponents[uid].mesh); }
@@ -819,6 +820,7 @@
 
         function buildLevelFromSegments(segments) {
             currentPos = { x: -5, y: -0.5, z: 0 };
+            levelMinY = -0.5;
             const midIndex = Math.floor(segments.length / 2);
             segments.forEach((seg, index) => {
                 const baseColor = index % 2 === 0 ? 0xdddddd : 0xcccccc;
@@ -842,6 +844,7 @@
                     case 'split_ramp_tunnel': { const riseH = 8; const angleH = Math.atan2(riseH, 20); const hypH = Math.sqrt(20*20 + riseH*riseH); createBox(hypH, 1, 8, currentPos.x + 10, currentPos.y + riseH/2, currentPos.z - 8, 0xff00ff, 0, 0, 0, angleH); createBox(10, 1, 8, currentPos.x + 25, currentPos.y + riseH, currentPos.z - 8, 0xff00ff); createBox(hypH, 1, 8, currentPos.x + 40, currentPos.y + riseH/2, currentPos.z - 8, 0xff00ff, 0, 0, 0, -angleH); createBox(50, 1, 8, currentPos.x + 25, currentPos.y, currentPos.z + 8, baseColor); createBox(50, 1, 8, currentPos.x + 25, currentPos.y + 5, currentPos.z + 8, 0x555555); currentPos.x += 50; break; }
                     case 'finish': { finishLineX = currentPos.x; createBox(20, 1, 20, currentPos.x + 10, currentPos.y, currentPos.z, 0xffd700); const arch = createBox(2, 8, 10, currentPos.x, currentPos.y + 4.5, currentPos.z, 0xffd700); arch.mesh.material.transparent = true; arch.mesh.material.opacity = 0.5; arch.body.collisionFilterGroup = 0; break; }
                 }
+                if(currentPos.y < levelMinY) levelMinY = currentPos.y;
             });
         }
 
@@ -906,7 +909,7 @@
             });
 
             if(gameActive || !gameActive) { // Run respawn check ALWAYS (fixes black screen glitch on load)
-                if(playerBody && playerBody.position.y < -30) {
+                if(playerBody && playerBody.position.y < levelMinY - 30) {
                     playerBody.position.set(currentRespawnPos.x, currentRespawnPos.y, currentRespawnPos.z);
                     playerBody.velocity.set(0, 0, 0); 
                     if(gameActive) {
