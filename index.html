@@ -87,6 +87,14 @@
             font-size: 1.5em;
         }
 
+        #countdown-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: none; align-items: center; justify-content: center;
+            font-size: 10rem; color: #ff00ff; font-weight: bold;
+            text-shadow: 0 0 20px white; z-index: 50;
+            pointer-events: none;
+        }
+
         /* Game UI */
         #ui {
             position: absolute; top: 20px; left: 20px; color: white; pointer-events: none;
@@ -173,6 +181,7 @@
 </head>
 <body>
     <div id="loading-overlay">Connecting to Cloud...</div>
+    <div id="countdown-overlay">5</div>
 
     <!-- Lobby UI -->
     <div id="lobby-ui">
@@ -188,13 +197,14 @@
             <div style="margin: 15px 0; color: #aaa;">- OR -</div>
             <input type="text" id="code-input" placeholder="ENTER HOST CODE">
             <button class="btn-primary" onclick="joinLobby()">JOIN GAME</button>
-            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">v4.0 (P2P Update)</div>
+            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">v5.0 (Countdown + Invites)</div>
         </div>
 
         <!-- Wait Room -->
         <div id="wait-room" class="panel" style="display: none;">
             <h3 style="margin: 0; color: #ff00ff;">LOBBY CODE</h3>
             <div id="code-display"><span id="lobby-code-display">??????</span></div>
+            <button class="btn-secondary" style="margin-top: 0; margin-bottom: 10px; padding: 5px 10px; font-size: 0.9em;" onclick="copyInviteLink()">🔗 COPY INVITE LINK</button>
             <div id="player-count">1 / 6 Players</div>
             <ul id="player-list">
                 <!-- Players go here -->
@@ -299,6 +309,19 @@
             
             // Client doesn't need specific ID, let server assign
             initPeer(null, code);
+        }
+
+        function copyInviteLink() {
+            const code = document.getElementById('lobby-code-display').innerText;
+            if(!code || code === "??????") return;
+            
+            const url = window.location.origin + window.location.pathname + '?code=' + code;
+            navigator.clipboard.writeText(url).then(() => {
+                const btn = document.querySelector('.btn-secondary[onclick="copyInviteLink()"]');
+                const orig = btn.innerText;
+                btn.innerText = "COPIED!";
+                setTimeout(() => btn.innerText = orig, 2000);
+            });
         }
 
         function initPeer(customId, lobbyCode) {
@@ -466,6 +489,7 @@
             document.getElementById('main-menu').style.display = 'flex';
             document.getElementById('wait-room').style.display = 'none';
             document.getElementById('loading-overlay').style.display = 'none';
+            document.getElementById('countdown-overlay').style.display = 'none';
             
             window.gameActive = false;
             window.clearLevel();
@@ -504,9 +528,20 @@
         window.createLobby = createLobby;
         window.joinLobby = joinLobby;
         window.hostStartGame = hostStartGame;
+        window.copyInviteLink = copyInviteLink;
+        window.backToMenu = backToMenu;
 
         // --- GAME INIT ---
         function init() {
+            // Check for invite code
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            if(code) {
+                document.getElementById('code-input').value = code;
+                // Optional: Highlight JOIN button or focus username
+                document.getElementById('username-input').focus();
+            }
+
             if (typeof THREE === 'undefined' || typeof CANNON === 'undefined') {
                 console.error("Libraries not loaded.");
                 return;
@@ -580,20 +615,44 @@
             animate();
         }
 
+        // Countdown Logic
+        async function runCountdown() {
+            const overlay = document.getElementById('countdown-overlay');
+            overlay.style.display = 'flex';
+            
+            for(let i=5; i>0; i--) {
+                overlay.innerText = i;
+                playTone(440, 0.1, 'sine', 0.5); // Beep
+                await new Promise(r => setTimeout(r, 1000));
+            }
+            
+            overlay.innerText = "GO!";
+            playTone(880, 0.4, 'square', 0.5); // High Beep
+            updateCommentary('start'); 
+            window.gameActive = true; // Unlock controls
+            
+            setTimeout(() => {
+                overlay.style.display = 'none';
+            }, 500);
+        }
+
         window.startMultiplayerGame = function(levelSegments) {
             document.getElementById('win-screen').style.display = 'none';
             clearLevel();
             createBackgroundScenery(); 
             buildLevelFromSegments(levelSegments);
             createPlayer();
-            window.gameActive = true;
-            gameActive = true;
+            
+            window.gameActive = false; // Locked initially
+            gameActive = false;
             window.hasFinished = false;
             hasFinished = false;
             
             if (!audioCtx) initAudio();
             window.changeMusicTrack(); 
-            updateCommentary('start');
+            
+            // Start Countdown sequence
+            runCountdown();
         }
 
         // --- Audio System ---
@@ -717,7 +776,7 @@
         }
 
         async function updateCommentary(eventType) {
-            if(!gameActive) return;
+            if(!gameActive && eventType !== 'start') return;
             const now = Date.now();
             if(now - lastCommentaryTime < 8000 && eventType !== 'checkpoint') return;
             lastCommentaryTime = now;
@@ -931,54 +990,6 @@
                 } else {
                     if(armL) armL.rotation.x = 0; if(armR) armR.rotation.x = 0; if(legL) legL.rotation.x = 0; if(legR) legR.rotation.x = 0;
                 }
-            }
-        }
-
-        function checkFinish() {
-            if(!hasFinished && playerBody.position.x > finishLineX) {
-                hasFinished = true; window.hasFinished = true; showEndScreen(); updateCommentary('finish');
-            }
-            let myX = playerBody.position.x; let countAhead = 0;
-            for(const uid in window.opponentsData) { if(window.opponentsData[uid].x > myX) countAhead++; }
-            document.getElementById('rank').innerText = `Rank: ${countAhead + 1}`;
-        }
-
-        function showEndScreen() {
-            window.gameActive = false; document.exitPointerLock();
-            const winScreen = document.getElementById('win-screen');
-            const leaderboardDiv = document.getElementById('final-leaderboard');
-            const controlsDiv = document.getElementById('end-screen-controls');
-            leaderboardDiv.innerHTML = ''; controlsDiv.innerHTML = '';
-            let allPlayers = [];
-            if (window.playerBody) allPlayers.push({ username: myUsername + " (You)", x: window.playerBody.position.x, finished: window.hasFinished, isLocal: true });
-            for (const uid in window.opponentsData) {
-                const p = window.opponentsData[uid]; if(uid === myId) continue;
-                allPlayers.push({ username: p.username, x: p.x, finished: p.finished, isLocal: false });
-            }
-            allPlayers.sort((a, b) => { if (a.finished && !b.finished) return -1; if (!a.finished && b.finished) return 1; return b.x - a.x; });
-            allPlayers.forEach((p, index) => {
-                const row = document.createElement('div'); row.className = 'leaderboard-row';
-                row.style.color = p.isLocal ? '#ffff00' : 'white'; row.style.fontWeight = p.isLocal ? 'bold' : 'normal';
-                const status = p.finished ? '<span style="color:#44cc44">FINISHED</span>' : Math.floor(p.x) + 'm';
-                row.innerHTML = `<span>#${index+1} ${p.username}</span><span>${status}</span>`;
-                leaderboardDiv.appendChild(row);
-            });
-            const menuBtn = document.createElement('button'); menuBtn.innerText = "BACK TO MENU"; menuBtn.onclick = window.backToMenu; menuBtn.style.marginRight = "10px"; controlsDiv.appendChild(menuBtn);
-            if (isHost) {
-                const nextBtn = document.createElement('button'); nextBtn.innerText = "START NEXT LEVEL"; nextBtn.style.backgroundColor = "#00ffff"; nextBtn.style.color = "#000"; nextBtn.onclick = window.hostStartGame; controlsDiv.appendChild(nextBtn);
-            } else {
-                const waitText = document.createElement('p'); waitText.innerText = "Waiting for host to start next level..."; waitText.style.fontSize = "0.9em"; waitText.style.color = "#aaa"; waitText.style.marginTop = "10px"; controlsDiv.appendChild(waitText);
-            }
-            winScreen.style.display = 'block';
-        }
-
-        function animate() {
-            requestAnimationFrame(animate); updatePhysics();
-            if(playerBody) {
-                const targetPos = playerBody.position; const radius = 14; const camHeight = 10;
-                const camX = targetPos.x - radius * Math.cos(cameraAngle); const camZ = targetPos.z - radius * Math.sin(cameraAngle);
-                camera.position.lerp(new THREE.Vector3(camX, targetPos.y + camHeight, camZ), 0.1);
-                camera.lookAt(targetPos.x, targetPos.y + 2, targetPos.z);
             }
             if (backgroundObjects.length > 0) backgroundObjects[0].position.copy(camera.position);
             renderer.render(scene, camera);
