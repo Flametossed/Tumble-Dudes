@@ -255,7 +255,7 @@
             document.getElementById('win-screen').style.display = 'none';
             document.getElementById('ui').style.display = 'none';
             document.getElementById('lobby-ui').style.display = 'flex';
-            document.getElementById('main-menu').style.display = 'block';
+            document.getElementById('main-menu').style.display = 'flex';
             document.getElementById('wait-room').style.display = 'none';
             
             // Reset buttons
@@ -411,7 +411,7 @@
             border-radius: 20px;
             border: 2px solid #ff00ff; 
             text-align: center; 
-            width: 100%;
+            width: 90%; /* Responsive width */
             max-width: 400px;
             box-shadow: 0 0 30px rgba(255, 0, 255, 0.3);
             display: flex;
@@ -573,7 +573,7 @@
             <div style="margin: 15px 0; color: #aaa;">- OR -</div>
             <input type="text" id="code-input" placeholder="ENTER CODE">
             <button class="btn-primary" onclick="window.joinLobby()">JOIN GAME</button>
-            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">v2.7 (Speed+Fix)</div>
+            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">v3.3 (2D Skyboxes)</div>
         </div>
 
         <!-- Wait Room -->
@@ -585,7 +585,7 @@
                 <!-- Players go here -->
             </ul>
             <button id="start-btn" class="btn-primary" onclick="window.hostStartGame()">START RACE (ANYTIME)</button>
-            <p style="font-size: 0.8em; color: #aaa; margin-top: 10px;">Waiting for host...</p>
+            <p id="wait-text" style="font-size: 0.8em; color: #aaa; margin-top: 10px;">Waiting for host...</p>
             <button class="btn-secondary" onclick="window.backToMenu()">Cancel</button>
         </div>
     </div>
@@ -637,6 +637,12 @@
         let checkpointActivated = false;
         window.checkpointFlagMat = null; 
 
+        // Jump Vars
+        let lastGroundedTime = 0;
+
+        // Background / Skybox
+        let backgroundObjects = [];
+
         // Expose globals for Module script
         window.playerBody = null;
         window.playerMesh = null;
@@ -664,6 +670,7 @@
             }
 
             scene = new THREE.Scene();
+            // Initial background
             scene.background = new THREE.Color(0x6a0dad); 
             scene.fog = new THREE.FogExp2(0x6a0dad, 0.006);
 
@@ -699,11 +706,8 @@
             });
             world.addContactMaterial(defaultContactMaterial);
 
-            createBackgroundScenery();
+            createBackgroundScenery(); // Start with a random one
             
-            // We do NOT create player or level here anymore.
-            // We wait for startMultiplayerGame()
-
             // Input Handling
             window.addEventListener('keydown', (e) => { 
                 let key = e.key.toLowerCase();
@@ -743,6 +747,7 @@
             document.getElementById('win-screen').style.display = 'none';
             
             clearLevel();
+            createBackgroundScenery(); // New Random Skybox per level
             buildLevelFromSegments(levelSegments);
             createPlayer();
             
@@ -875,24 +880,148 @@
 
         // --- Visuals & Level ---
 
-        function createBackgroundScenery() {
-            const geom = new THREE.IcosahedronGeometry(15, 0);
-            for(let i=0; i<80; i++) {
-                const mat = new THREE.MeshPhongMaterial({ 
-                    color: Math.random() * 0xffffff, 
-                    transparent: true, 
-                    opacity: 0.3,
-                    flatShading: true
-                });
-                const mesh = new THREE.Mesh(geom, mat);
-                mesh.position.set(
-                    (Math.random() - 0.5) * 600,
-                    (Math.random() - 0.5) * 400 + 40,
-                    (Math.random() - 0.5) * 400
-                );
-                mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
-                scene.add(mesh);
+        function generateSkyboxTexture(theme) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+
+            if (theme === 0) {
+                // Neon Space
+                const grad = ctx.createLinearGradient(0, 0, 0, h);
+                grad.addColorStop(0, '#000000');
+                grad.addColorStop(1, '#220033');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, w, h);
+                
+                // Stars
+                ctx.fillStyle = '#ffffff';
+                for(let i=0; i<300; i++) {
+                    const x = Math.random() * w;
+                    const y = Math.random() * h;
+                    const r = Math.random() * 1.5;
+                    ctx.beginPath();
+                    ctx.arc(x, y, r, 0, Math.PI*2);
+                    ctx.fill();
+                }
+                
+                // Nebula
+                ctx.fillStyle = 'rgba(255, 0, 255, 0.1)';
+                for(let i=0; i<5; i++) {
+                    const x = Math.random() * w;
+                    const y = Math.random() * h;
+                    const r = 50 + Math.random() * 100;
+                    ctx.beginPath();
+                    ctx.arc(x, y, r, 0, Math.PI*2);
+                    ctx.fill();
+                }
+
+            } else if (theme === 1) {
+                // Sunny Day
+                const grad = ctx.createLinearGradient(0, 0, 0, h);
+                grad.addColorStop(0, '#00BFFF'); // Deep Sky Blue
+                grad.addColorStop(1, '#87CEFA'); // Light Sky Blue
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, w, h);
+
+                // Clouds
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                for(let i=0; i<20; i++) {
+                    const x = Math.random() * w;
+                    const y = Math.random() * (h/2); // Upper half
+                    const r = 20 + Math.random() * 40;
+                    ctx.beginPath();
+                    ctx.arc(x, y, r, 0, Math.PI*2);
+                    ctx.arc(x+r*0.7, y-r*0.2, r*0.8, 0, Math.PI*2);
+                    ctx.arc(x-r*0.7, y-r*0.2, r*0.8, 0, Math.PI*2);
+                    ctx.fill();
+                }
+
+            } else if (theme === 2) {
+                // Synth Sunset
+                const grad = ctx.createLinearGradient(0, 0, 0, h);
+                grad.addColorStop(0, '#4B0082'); // Indigo
+                grad.addColorStop(0.6, '#FF4500'); // OrangeRed
+                grad.addColorStop(1, '#FFD700'); // Gold
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, w, h);
+
+                // Sun
+                const gradSun = ctx.createRadialGradient(w/2, h*0.8, 10, w/2, h*0.8, 80);
+                gradSun.addColorStop(0, '#ffffcc');
+                gradSun.addColorStop(1, 'rgba(255, 255, 0, 0)');
+                ctx.fillStyle = gradSun;
+                ctx.beginPath();
+                ctx.arc(w/2, h*0.8, 80, 0, Math.PI*2);
+                ctx.fill();
+
+                // Mountains (Silhouette)
+                ctx.fillStyle = '#220022';
+                ctx.beginPath();
+                ctx.moveTo(0, h);
+                for(let i=0; i<=w; i+=50) {
+                    ctx.lineTo(i, h - 50 - Math.random()*100);
+                }
+                ctx.lineTo(w, h);
+                ctx.fill();
+
+            } else {
+                // Cyber Grid
+                const grad = ctx.createLinearGradient(0, 0, 0, h);
+                grad.addColorStop(0, '#000000');
+                grad.addColorStop(1, '#001133');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, w, h);
+
+                // Grid lines
+                ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
+                ctx.lineWidth = 2;
+                
+                // Horizon perspective lines
+                for(let i=0; i<w; i+=80) {
+                    ctx.beginPath();
+                    ctx.moveTo(w/2, h/2); // Vanishing pointish
+                    ctx.lineTo(i, h);
+                    ctx.stroke();
+                }
+                
+                // Horizontal lines
+                for(let i=h/2; i<h; i+=40) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, i);
+                    ctx.lineTo(w, i);
+                    ctx.stroke();
+                }
             }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            return texture;
+        }
+
+        function createBackgroundScenery() {
+            // Clear previous objects
+            backgroundObjects.forEach(obj => scene.remove(obj));
+            backgroundObjects = [];
+
+            const theme = Math.floor(Math.random() * 4);
+            const texture = generateSkyboxTexture(theme);
+            
+            // Adjust Fog based on theme
+            if (theme === 0) scene.fog = new THREE.FogExp2(0x110022, 0.002);
+            else if (theme === 1) scene.fog = new THREE.FogExp2(0x87CEFA, 0.002);
+            else if (theme === 2) scene.fog = new THREE.FogExp2(0x4B0082, 0.0025);
+            else scene.fog = new THREE.FogExp2(0x001133, 0.003);
+
+            // Create huge sphere
+            const geo = new THREE.SphereGeometry(800, 32, 32); // 800 Radius
+            // BackSide to view from inside, fog: false to keep it vivid
+            const mat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide, fog: false });
+            const skybox = new THREE.Mesh(geo, mat);
+            
+            scene.add(skybox);
+            backgroundObjects.push(skybox);
         }
 
         // Expose for host
@@ -1054,10 +1183,18 @@
             segments.forEach((seg, index) => {
                 const baseColor = index % 2 === 0 ? 0xdddddd : 0xcccccc;
 
-                // Checkpoint Logic: Place at start of middle segment
+                // Checkpoint Logic: Place at start of middle segment, slightly forward (+10)
                 if (index === midIndex) {
-                    checkpointPos = { ...currentPos }; // Save full coordinate
-                    createCheckpointVisual(currentPos.x, currentPos.y, currentPos.z);
+                    // Safe spawn coordinate relative to segment start
+                    // We record the current Z before potential shifts modify it for the next block
+                    // But we push X forward to ensure we land on the platform
+                    checkpointPos = { x: currentPos.x + 10, y: currentPos.y + 2, z: currentPos.z }; 
+                    createCheckpointVisual(currentPos.x + 10, currentPos.y, currentPos.z);
+                    
+                    // --- FIX: Add Safety Platform ---
+                    // Create a large, wide platform under the checkpoint to guarantee a landing zone
+                    // Lowered by 0.2 to prevent Z-fighting with main track
+                    createBox(25, 1, 25, currentPos.x + 10, currentPos.y - 0.2, currentPos.z, 0x66ff66);
                 }
 
                 switch(seg) {
@@ -1313,6 +1450,10 @@
                     else { if(c.ni.y > 0.5) isGrounded = true; }
                 }
             }
+            
+            if (isGrounded) {
+                lastGroundedTime = Date.now();
+            }
 
             const time = Date.now() * 0.001;
             
@@ -1331,7 +1472,7 @@
                 if(checkpointPos && !checkpointActivated && playerBody.position.x > checkpointPos.x) {
                     checkpointActivated = true;
                     // Respawn slightly higher to be safe
-                    // Use captured Z coordinate
+                    // Use captured Z coordinate and X position
                     currentRespawnPos = { x: checkpointPos.x, y: checkpointPos.y + 10, z: checkpointPos.z };
                     
                     // Update visuals
@@ -1406,7 +1547,10 @@
                     playerBody.velocity.z += fwdZ * 0.2;
                 }
 
-                if(keys.space && isGrounded) {
+                // Jump check using grace period (Coyote Time)
+                if(keys.space && (Date.now() - lastGroundedTime < 200)) {
+                    // Reset grace period to prevent double jumping in same frame window
+                    lastGroundedTime = 0;
                     playerBody.velocity.y = 20;
                 }
 
@@ -1497,6 +1641,11 @@
                 const camZ = targetPos.z - radius * Math.sin(cameraAngle);
                 camera.position.lerp(new THREE.Vector3(camX, targetPos.y + camHeight, camZ), 0.1);
                 camera.lookAt(targetPos.x, targetPos.y + 2, targetPos.z);
+            }
+            
+            // Sync Skybox to Camera
+            if (backgroundObjects.length > 0) {
+                backgroundObjects[0].position.copy(camera.position);
             }
 
             renderer.render(scene, camera);
