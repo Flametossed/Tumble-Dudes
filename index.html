@@ -188,7 +188,7 @@
             <div style="margin: 15px 0; color: #aaa;">- OR -</div>
             <input type="text" id="code-input" placeholder="ENTER HOST CODE">
             <button class="btn-primary" onclick="joinLobby()">JOIN GAME</button>
-            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">v6.3 (Invite Link)</div>
+            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">v6.4 (Animation Fix)</div>
         </div>
 
         <!-- Wait Room -->
@@ -986,6 +986,56 @@
                 } else {
                     if(armL) armL.rotation.x = 0; if(armR) armR.rotation.x = 0; if(legL) legL.rotation.x = 0; if(legR) legR.rotation.x = 0;
                 }
+            }
+        }
+
+        function checkFinish() {
+            if(!hasFinished && playerBody.position.x > finishLineX) {
+                hasFinished = true; window.hasFinished = true; showEndScreen(); updateCommentary('finish');
+            }
+            let myX = playerBody.position.x; let countAhead = 0;
+            for(const uid in window.opponentsData) { if(window.opponentsData[uid].x > myX) countAhead++; }
+            document.getElementById('rank').innerText = `Rank: ${countAhead + 1}`;
+        }
+
+        function showEndScreen() {
+            window.gameActive = false; document.exitPointerLock();
+            const winScreen = document.getElementById('win-screen');
+            const leaderboardDiv = document.getElementById('final-leaderboard');
+            const controlsDiv = document.getElementById('end-screen-controls');
+            leaderboardDiv.innerHTML = ''; controlsDiv.innerHTML = '';
+            let allPlayers = [];
+            if (window.playerBody) allPlayers.push({ username: myUsername + " (You)", x: window.playerBody.position.x, finished: window.hasFinished, isLocal: true });
+            for (const uid in window.opponentsData) {
+                const p = window.opponentsData[uid]; if(uid === myId) continue;
+                allPlayers.push({ username: p.username, x: p.x, finished: p.finished, isLocal: false });
+            }
+            allPlayers.sort((a, b) => { if (a.finished && !b.finished) return -1; if (!a.finished && b.finished) return 1; return b.x - a.x; });
+            allPlayers.forEach((p, index) => {
+                const row = document.createElement('div'); row.className = 'leaderboard-row';
+                row.style.color = p.isLocal ? '#ffff00' : 'white'; row.style.fontWeight = p.isLocal ? 'bold' : 'normal';
+                const status = p.finished ? '<span style="color:#44cc44">FINISHED</span>' : Math.floor(p.x) + 'm';
+                row.innerHTML = `<span>#${index+1} ${p.username}</span><span>${status}</span>`;
+                leaderboardDiv.appendChild(row);
+            });
+            const menuBtn = document.createElement('button'); menuBtn.innerText = "BACK TO MENU"; menuBtn.onclick = window.backToMenu; menuBtn.style.marginRight = "10px"; controlsDiv.appendChild(menuBtn);
+            if (isHost) {
+                const nextBtn = document.createElement('button'); nextBtn.innerText = "START NEXT LEVEL"; nextBtn.style.backgroundColor = "#00ffff"; nextBtn.style.color = "#000"; nextBtn.onclick = window.hostStartGame; controlsDiv.appendChild(nextBtn);
+            } else {
+                const waitText = document.createElement('p'); waitText.innerText = "Waiting for host to start next level..."; waitText.style.fontSize = "0.9em"; waitText.style.color = "#aaa"; waitText.style.marginTop = "10px"; controlsDiv.appendChild(waitText);
+            }
+            winScreen.style.display = 'block';
+        }
+
+        function animate() {
+            requestAnimationFrame(animate); 
+            updatePhysics();
+            
+            if(playerBody) {
+                const targetPos = playerBody.position; const radius = 14; const camHeight = 10;
+                const camX = targetPos.x - radius * Math.cos(cameraAngle); const camZ = targetPos.z - radius * Math.sin(cameraAngle);
+                camera.position.lerp(new THREE.Vector3(camX, targetPos.y + camHeight, camZ), 0.1);
+                camera.lookAt(targetPos.x, targetPos.y + 2, targetPos.z);
             }
             if (backgroundObjects.length > 0) backgroundObjects[0].position.copy(camera.position);
             renderer.render(scene, camera);
