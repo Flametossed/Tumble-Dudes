@@ -6,392 +6,8 @@
     <title>Tumble Dudes</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, doc, setDoc, getDoc, getDocs, onSnapshot, updateDoc, deleteDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // --- Firebase Config & Globals ---
-        // --- CONFIGURATION SECTION ---
-        // YOUR FIREBASE CONFIG (Tumble Dudes)
-        const myFirebaseConfig = {
-            apiKey: "AIzaSyAZcHTFks9pRqcHncpeF6s5ZjmGLHHe5MQ",
-            authDomain: "tumble-dudes-4330d.firebaseapp.com",
-            projectId: "tumble-dudes-4330d",
-            storageBucket: "tumble-dudes-4330d.firebasestorage.app",
-            messagingSenderId: "565414083389",
-            appId: "1:565414083389:web:adfa327e7afcbd58746354"
-        };
-        // -----------------------------
-
-        let firebaseConfig;
-        let appId;
-        
-        try {
-            // Attempt to use Preview environment config first
-            if (typeof __firebase_config !== 'undefined') {
-                firebaseConfig = JSON.parse(__firebase_config);
-                appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-            } else {
-                throw new Error("No env config");
-            }
-        } catch (e) {
-            // Fallback to manual config for Production/Vercel
-            console.log("Using manual Firebase config (Production Mode)");
-            firebaseConfig = myFirebaseConfig;
-            // This 'appId' is used for the database path, not the firebase config appId
-            appId = "tumble-dudes-prod"; 
-        }
-
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        
-        window.db = db;
-        window.auth = auth;
-        window.appId = appId;
-        
-        let currentUser = null;
-        let currentLobbyId = null;
-        let isHost = false;
-        let lobbyUnsubscribe = null;
-        let playersUnsubscribe = null;
-        let myUsername = "Bean";
-
-        // Auth Flow
-        const initAuth = async () => {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (e) {
-                console.warn("Auth fallback:", e);
-                // Standard anonymous login for Vercel deployment
-                await signInAnonymously(auth);
-            }
-        };
-
-        initAuth();
-
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                currentUser = user;
-                console.log("Logged in as", user.uid);
-                document.getElementById('auth-status').innerText = "Connected to Server";
-                document.getElementById('lobby-ui').style.display = 'flex';
-                document.getElementById('loading-overlay').style.display = 'none';
-            }
-        });
-
-        // --- Network Logic ---
-        
-        window.createLobby = async () => {
-            if (!currentUser) return;
-            const btn = document.querySelector('button[onclick="window.createLobby()"]');
-            btn.innerText = "CREATING...";
-            btn.disabled = true;
-
-            try {
-                const username = document.getElementById('username-input').value || "Host Dude";
-                myUsername = username;
-                
-                const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-                currentLobbyId = code;
-                isHost = true;
-
-                const lobbyRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code);
-                
-                await setDoc(lobbyRef, {
-                    hostId: currentUser.uid,
-                    status: 'waiting',
-                    levelSegments: [], 
-                    createdAt: serverTimestamp()
-                });
-
-                const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code, 'players', currentUser.uid);
-                await setDoc(playerRef, {
-                    username: username,
-                    isHost: true,
-                    joinedAt: serverTimestamp(),
-                    state: { x: -5, y: 5, z: 0, rot: 0, finished: false }
-                });
-
-                enterLobbyUI(code);
-            } catch (error) {
-                console.error("Create Lobby Error:", error);
-                alert("Failed to create lobby: " + error.message + "\n\n1. Did you enable Anonymous Auth?\n2. Are Database Rules in Test Mode?");
-                btn.innerText = "HOST GAME";
-                btn.disabled = false;
-            }
-        }
-
-        window.joinLobby = async () => {
-            if (!currentUser) return;
-            const btn = document.querySelector('button[onclick="window.joinLobby()"]');
-            btn.innerText = "JOINING...";
-            btn.disabled = true;
-
-            try {
-                const code = document.getElementById('code-input').value.toUpperCase();
-                const username = document.getElementById('username-input').value || "Guest Dude";
-                
-                if(!code) throw new Error("Please enter a lobby code");
-                
-                myUsername = username;
-                currentLobbyId = code;
-                isHost = false;
-
-                const lobbyRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code);
-                const snap = await getDoc(lobbyRef);
-
-                if (!snap.exists()) {
-                    throw new Error("Lobby not found! Check the code.");
-                }
-                
-                if (snap.data().status === 'playing') {
-                    throw new Error("Game already in progress!");
-                }
-
-                const playersRef = collection(db, 'artifacts', appId, 'public', 'data', 'lobbies', code, 'players');
-                const playersSnap = await getDocs(playersRef);
-                if (playersSnap.size >= 6) {
-                    throw new Error("Lobby is full! Max 6 players.");
-                }
-
-                const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code, 'players', currentUser.uid);
-                await setDoc(playerRef, {
-                    username: username,
-                    isHost: false,
-                    joinedAt: serverTimestamp(),
-                    state: { x: -5, y: 5, z: 0, rot: 0, finished: false }
-                });
-
-                enterLobbyUI(code);
-            } catch (error) {
-                console.error("Join Error:", error);
-                alert(error.message);
-                btn.innerText = "JOIN GAME";
-                btn.disabled = false;
-            }
-        }
-
-        function enterLobbyUI(code) {
-            document.getElementById('main-menu').style.display = 'none';
-            document.getElementById('wait-room').style.display = 'flex';
-            document.getElementById('lobby-code-display').innerText = code;
-
-            if(!isHost) document.getElementById('start-btn').style.display = 'none';
-
-            const lobbyRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code);
-            lobbyUnsubscribe = onSnapshot(lobbyRef, (doc) => {
-                const data = doc.data();
-                if (data && data.status === 'playing') {
-                    document.getElementById('ui').style.display = 'block'; 
-                    document.getElementById('lobby-ui').style.display = 'none';
-                    // Trigger game start logic, this handles cleanup and rebuilding
-                    window.startMultiplayerGame(data.levelSegments);
-                }
-            });
-
-            const playersRef = collection(db, 'artifacts', appId, 'public', 'data', 'lobbies', code, 'players');
-            playersUnsubscribe = onSnapshot(playersRef, (snapshot) => {
-                const list = document.getElementById('player-list');
-                list.innerHTML = '';
-                window.opponentsData = {}; 
-                
-                let count = 0;
-                snapshot.forEach(doc => {
-                    const p = doc.data();
-                    const li = document.createElement('li');
-                    li.innerText = `${p.username} ${p.isHost ? '👑' : ''}`;
-                    list.appendChild(li);
-                    
-                    if (doc.id !== currentUser.uid) {
-                        window.opponentsData[doc.id] = p; 
-                    }
-                    count++;
-                });
-                document.getElementById('player-count').innerText = `${count} / 6 Players`;
-            });
-        }
-
-        window.hostStartGame = async () => {
-            if(!isHost) return;
-            const btn = document.getElementById('start-btn');
-            const wasText = btn.innerText;
-            btn.disabled = true;
-            btn.innerText = "STARTING...";
-
-            try {
-                const level = window.generateRandomLevelStructure(); 
-                
-                const lobbyRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', currentLobbyId);
-                // We add a timestamp 'round' to force a change event if the level is same (unlikely but safe)
-                await updateDoc(lobbyRef, {
-                    status: 'playing',
-                    levelSegments: level,
-                    roundId: Date.now()
-                });
-                
-                // If this was triggered from End Screen, reset button text for next time
-                setTimeout(() => {
-                    btn.disabled = false;
-                    btn.innerText = wasText;
-                }, 2000);
-
-            } catch (error) {
-                console.error("Start Game Error:", error);
-                alert("Failed to start game: " + error.message + "\n\nCheck Firebase Database Rules (Write permissions).");
-                btn.disabled = false;
-                btn.innerText = "START RACE (ANYTIME)";
-            }
-        }
-
-        // Properly reset state without reload
-        window.backToMenu = function() {
-            // UI Reset
-            document.getElementById('win-screen').style.display = 'none';
-            document.getElementById('ui').style.display = 'none';
-            document.getElementById('lobby-ui').style.display = 'flex';
-            document.getElementById('main-menu').style.display = 'flex';
-            document.getElementById('wait-room').style.display = 'none';
-            
-            // Reset buttons
-            const createBtn = document.querySelector('button[onclick="window.createLobby()"]');
-            createBtn.innerText = "HOST GAME";
-            createBtn.disabled = false;
-            
-            const joinBtn = document.querySelector('button[onclick="window.joinLobby()"]');
-            joinBtn.innerText = "JOIN GAME";
-            joinBtn.disabled = false;
-            
-            const startBtn = document.getElementById('start-btn');
-            startBtn.innerText = "START RACE (ANYTIME)";
-            startBtn.disabled = false;
-
-            // Game State Reset
-            window.gameActive = false;
-            window.hasFinished = false;
-            window.playerMomentum = 20;
-            currentLobbyId = null;
-            isHost = false;
-
-            // Cleanup Network Listeners
-            if (lobbyUnsubscribe) { lobbyUnsubscribe(); lobbyUnsubscribe = null; }
-            if (playersUnsubscribe) { playersUnsubscribe(); playersUnsubscribe = null; }
-
-            // Cleanup Scene
-            window.clearLevel(); 
-            if (window.playerBody) {
-                // Main cleanup handled by clearLevel, ensure physics clear
-            }
-            window.opponentsData = {};
-            
-            window.changeMusicTrack();
-        }
-
-        setInterval(async () => {
-            if (window.gameActive && currentUser && currentLobbyId) {
-                const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', currentLobbyId, 'players', currentUser.uid);
-                updateDoc(playerRef, {
-                    "state.x": window.playerBody.position.x,
-                    "state.y": window.playerBody.position.y,
-                    "state.z": window.playerBody.position.z,
-                    "state.rot": window.playerMesh.rotation.y, 
-                    "state.finished": window.hasFinished
-                }).catch(e => {}); 
-            }
-        }, 100); 
-
-        // --- Leaderboard Logic ---
-        window.showEndScreen = function() {
-            window.gameActive = false;
-            document.exitPointerLock();
-            const winScreen = document.getElementById('win-screen');
-            const leaderboardDiv = document.getElementById('final-leaderboard');
-            const controlsDiv = document.getElementById('end-screen-controls');
-            
-            leaderboardDiv.innerHTML = ''; // Clear previous
-            controlsDiv.innerHTML = '';    // Clear previous buttons
-
-            // --- 1. POPULATE LEADERBOARD ---
-            let allPlayers = [];
-            
-            // Add Self
-            if (window.playerBody) {
-                allPlayers.push({
-                    username: myUsername + " (You)",
-                    x: window.playerBody.position.x,
-                    finished: window.hasFinished,
-                    isLocal: true
-                });
-            }
-
-            // Add Opponents
-            for (const uid in window.opponentsData) {
-                const p = window.opponentsData[uid];
-                if(p.state) {
-                    allPlayers.push({
-                        username: p.username,
-                        x: p.state.x,
-                        finished: p.state.finished,
-                        isLocal: false
-                    });
-                }
-            }
-
-            // Sort: Finished first, then by distance
-            allPlayers.sort((a, b) => {
-                if (a.finished && !b.finished) return -1;
-                if (!a.finished && b.finished) return 1;
-                return b.x - a.x; 
-            });
-
-            // Render Rows
-            allPlayers.forEach((p, index) => {
-                const row = document.createElement('div');
-                row.className = 'leaderboard-row';
-                row.style.color = p.isLocal ? '#ffff00' : 'white';
-                row.style.fontWeight = p.isLocal ? 'bold' : 'normal';
-                
-                const status = p.finished ? '<span style="color:#44cc44">FINISHED</span>' : Math.floor(p.x) + 'm';
-                
-                row.innerHTML = `
-                    <span>#${index+1} ${p.username}</span>
-                    <span>${status}</span>
-                `;
-                leaderboardDiv.appendChild(row);
-            });
-
-            // --- 2. POPULATE CONTROLS ---
-            const menuBtn = document.createElement('button');
-            menuBtn.innerText = "BACK TO MENU";
-            menuBtn.onclick = window.backToMenu;
-            menuBtn.style.marginRight = "10px";
-            controlsDiv.appendChild(menuBtn);
-
-            if (isHost) {
-                const nextBtn = document.createElement('button');
-                nextBtn.innerText = "START NEXT LEVEL";
-                nextBtn.style.backgroundColor = "#00ffff";
-                nextBtn.style.color = "#000";
-                nextBtn.onclick = window.hostStartGame;
-                controlsDiv.appendChild(nextBtn);
-            } else {
-                const waitText = document.createElement('p');
-                waitText.innerText = "Waiting for host to start next level...";
-                waitText.style.fontSize = "0.9em";
-                waitText.style.color = "#aaa";
-                waitText.style.marginTop = "10px";
-                controlsDiv.appendChild(waitText);
-            }
-
-            winScreen.style.display = 'block';
-        }
-
-    </script>
+    <!-- PeerJS for P2P Networking (Replaces Firebase) -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #222; }
@@ -400,7 +16,7 @@
         #lobby-ui {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: linear-gradient(135deg, #6a0dad, #222);
-            display: none; /* Flex when active */
+            display: flex; /* Default flex */
             flex-direction: column; align-items: center; justify-content: center;
             z-index: 100; color: white;
         }
@@ -411,7 +27,7 @@
             border-radius: 20px;
             border: 2px solid #ff00ff; 
             text-align: center; 
-            width: 90%; /* Responsive width */
+            width: 90%; 
             max-width: 400px;
             box-shadow: 0 0 30px rgba(255, 0, 255, 0.3);
             display: flex;
@@ -467,7 +83,7 @@
         #loading-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #111; z-index: 200; color: #ff00ff;
-            display: flex; align-items: center; justify-content: center;
+            display: none; align-items: center; justify-content: center;
             font-size: 1.5em;
         }
 
@@ -475,7 +91,7 @@
         #ui {
             position: absolute; top: 20px; left: 20px; color: white; pointer-events: none;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.8); z-index: 10;
-            display: none; /* Hidden until game starts */
+            display: none; 
             flex-direction: column; gap: 10px;
         }
 
@@ -556,24 +172,24 @@
     </style>
 </head>
 <body>
-    <div id="loading-overlay">Loading Servers...</div>
+    <div id="loading-overlay">Connecting to Cloud...</div>
 
     <!-- Lobby UI -->
     <div id="lobby-ui">
         <h1 style="margin-bottom: 0;">TUMBLE DUDES</h1>
-        <p style="color: #ccc; margin-top: 5px;">Multiplayer Edition</p>
+        <p style="color: #ccc; margin-top: 5px;">P2P Multiplayer (Free & Unlimited)</p>
         
-        <div id="auth-status" style="margin-bottom: 20px; color: #00ffff;">Connecting...</div>
+        <div id="auth-status" style="margin-bottom: 20px; color: #00ffff;">Ready to Connect</div>
 
         <!-- Main Menu -->
         <div id="main-menu" class="panel">
             <input type="text" id="username-input" placeholder="USERNAME" maxlength="10">
             <div style="border-top: 1px solid #444; width: 100%; margin: 20px 0;"></div>
-            <button class="btn-primary" onclick="window.createLobby()">HOST GAME</button>
+            <button class="btn-primary" onclick="createLobby()">HOST GAME</button>
             <div style="margin: 15px 0; color: #aaa;">- OR -</div>
-            <input type="text" id="code-input" placeholder="ENTER CODE">
-            <button class="btn-primary" onclick="window.joinLobby()">JOIN GAME</button>
-            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">v3.4 (Animations & Skyboxes)</div>
+            <input type="text" id="code-input" placeholder="ENTER HOST CODE">
+            <button class="btn-primary" onclick="joinLobby()">JOIN GAME</button>
+            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">v4.0 (P2P Update)</div>
         </div>
 
         <!-- Wait Room -->
@@ -584,9 +200,9 @@
             <ul id="player-list">
                 <!-- Players go here -->
             </ul>
-            <button id="start-btn" class="btn-primary" onclick="window.hostStartGame()">START RACE (ANYTIME)</button>
+            <button id="start-btn" class="btn-primary" onclick="hostStartGame()">START RACE (ANYTIME)</button>
             <p id="wait-text" style="font-size: 0.8em; color: #aaa; margin-top: 10px;">Waiting for host...</p>
-            <button class="btn-secondary" onclick="window.backToMenu()">Cancel</button>
+            <button class="btn-secondary" onclick="backToMenu()">Cancel</button>
         </div>
     </div>
 
@@ -616,14 +232,24 @@
     </div>
 
     <script>
-        // --- Gemini Configuration ---
-        const apiKey = ""; 
+        // --- PEERJS CONFIG ---
+        // PeerJS allows direct browser-to-browser connection. No Firebase quotas.
+        let peer = null;
+        let connections = []; // For Host: Array of DataConnection
+        let hostConn = null;  // For Client: Connection to Host
         
-        // --- Three/Cannon Vars ---
+        let myId = null;
+        let myUsername = "Bean";
+        let isHost = false;
+        
+        // Game State Sync
+        window.opponentsData = {}; // { peerId: { username, x, y, z, rot, finished } }
+        let myState = { x: 0, y: 0, z: 0, rot: 0, finished: false };
+
+        // --- GAME VARS ---
         let scene, camera, renderer, world;
-        let player, playerBody, playerMesh; // Global for networking
-        let opponents = {}; // Map of userId -> { mesh, targetPos, targetRot, lastPos }
-        window.opponentsData = {}; // Raw data from Firestore
+        let player, playerBody, playerMesh; 
+        let opponents = {}; // Visual Meshes
         let obstacles = [];
         let gameActive = false;
         let finishLineX = 0;
@@ -633,44 +259,261 @@
         
         // Checkpoint System
         let currentRespawnPos = { x: -5, y: 5, z: 0 };
-        let checkpointPos = null; // Store {x, y, z}
+        let checkpointPos = null;
         let checkpointActivated = false;
         window.checkpointFlagMat = null; 
 
         // Jump Vars
         let lastGroundedTime = 0;
-
-        // Background / Skybox
         let backgroundObjects = [];
-
-        // Expose globals for Module script
-        window.playerBody = null;
-        window.playerMesh = null;
-        window.gameActive = false;
-        window.hasFinished = false;
-
-        // Camera State
         let cameraAngle = 0;
         let isPointerLocked = false;
-        
-        // Audio
         let audioCtx;
         let isMuted = false;
         let noteIndex = 0;
         let isPlayingMusic = false;
         let currentTrack = null;
-        
         const keys = { w: false, a: false, s: false, d: false, space: false };
-        
-        // --- Initialization ---
+
+        // --- NETWORK FUNCTIONS ---
+
+        function createLobby() {
+            const username = document.getElementById('username-input').value || "Host Dude";
+            myUsername = username;
+            isHost = true;
+            
+            // Random 4-digit code
+            const code = Math.floor(1000 + Math.random() * 9000).toString();
+            // Prefix to make unique on public server
+            const peerId = "tumble-" + code;
+
+            initPeer(peerId, code);
+        }
+
+        function joinLobby() {
+            const username = document.getElementById('username-input').value || "Guest Dude";
+            myUsername = username;
+            isHost = false;
+            
+            const code = document.getElementById('code-input').value;
+            if(!code) { alert("Enter code!"); return; }
+            
+            // Client doesn't need specific ID, let server assign
+            initPeer(null, code);
+        }
+
+        function initPeer(customId, lobbyCode) {
+            document.getElementById('loading-overlay').style.display = 'flex';
+            
+            // Using public PeerJS server (Free, no reliability guarantee, but usually fine)
+            // Or host your own simple peer server on Render/Heroku if this gets busy
+            peer = new Peer(customId, {
+                debug: 2
+            });
+
+            peer.on('open', (id) => {
+                myId = id;
+                document.getElementById('loading-overlay').style.display = 'none';
+                
+                if(isHost) {
+                    enterLobbyUI(lobbyCode);
+                    // Add self to opponentsData for local display
+                    window.opponentsData[myId] = { username: myUsername, isHost: true };
+                    updateLobbyList();
+                } else {
+                    // Connect to Host
+                    const hostId = "tumble-" + lobbyCode;
+                    hostConn = peer.connect(hostId);
+                    
+                    hostConn.on('open', () => {
+                        console.log("Connected to Host!");
+                        // Send handshake
+                        hostConn.send({ type: 'join', username: myUsername });
+                        enterLobbyUI(lobbyCode);
+                    });
+
+                    hostConn.on('data', handleDataFromHost);
+                    hostConn.on('close', () => { alert("Host disconnected!"); backToMenu(); });
+                    hostConn.on('error', (err) => { alert("Connection Error: " + err); backToMenu(); });
+                }
+            });
+
+            peer.on('connection', (conn) => {
+                // Only Host receives connections
+                if(!isHost) return;
+
+                conn.on('open', () => {
+                    connections.push(conn);
+                    // Send current players to new guy
+                    conn.send({ type: 'state_update', players: window.opponentsData });
+                });
+
+                conn.on('data', (data) => handleDataFromClient(data, conn.peer));
+                
+                conn.on('close', () => {
+                    // Remove player
+                    delete window.opponentsData[conn.peer];
+                    connections = connections.filter(c => c.peer !== conn.peer);
+                    updateLobbyList();
+                    broadcastState(); // Tell everyone they left
+                });
+            });
+
+            peer.on('error', (err) => {
+                document.getElementById('loading-overlay').style.display = 'none';
+                if(err.type === 'unavailable-id') {
+                    alert("Lobby Code already taken. Try again.");
+                } else {
+                    alert("Network Error: " + err.type);
+                }
+                backToMenu();
+            });
+        }
+
+        // --- HOST LOGIC ---
+        function handleDataFromClient(data, clientId) {
+            if(data.type === 'join') {
+                if(Object.keys(window.opponentsData).length >= 6) return; // Full
+                window.opponentsData[clientId] = { 
+                    username: data.username, 
+                    isHost: false,
+                    // Init physics state
+                    x: -5, y: 5, z: 0, rot: 0, finished: false
+                };
+                updateLobbyList();
+                broadcastState(); // Sync everyone
+            } else if (data.type === 'pos') {
+                // Update player position in source of truth
+                if(window.opponentsData[clientId]) {
+                    Object.assign(window.opponentsData[clientId], data.state);
+                }
+            }
+        }
+
+        function broadcastState() {
+            // Send full player list to everyone
+            const msg = { type: 'state_update', players: window.opponentsData };
+            connections.forEach(c => c.send(msg));
+        }
+
+        // --- CLIENT LOGIC ---
+        function handleDataFromHost(data) {
+            if (data.type === 'state_update') {
+                // Update local copy of everyone else
+                window.opponentsData = data.players;
+                updateLobbyList(); // Refresh UI if in lobby
+            } else if (data.type === 'start_game') {
+                window.startMultiplayerGame(data.level);
+                document.getElementById('ui').style.display = 'block'; 
+                document.getElementById('lobby-ui').style.display = 'none';
+            }
+        }
+
+        // --- UI FUNCS ---
+        function enterLobbyUI(code) {
+            document.getElementById('main-menu').style.display = 'none';
+            document.getElementById('wait-room').style.display = 'flex';
+            document.getElementById('lobby-code-display').innerText = code;
+            
+            const startBtn = document.getElementById('start-btn');
+            const waitText = document.getElementById('wait-text');
+
+            if(isHost) {
+                startBtn.style.display = 'block';
+                waitText.style.display = 'none';
+            } else {
+                startBtn.style.display = 'none';
+                waitText.style.display = 'block';
+            }
+        }
+
+        function updateLobbyList() {
+            const list = document.getElementById('player-list');
+            list.innerHTML = '';
+            let count = 0;
+            for(const pid in window.opponentsData) {
+                const p = window.opponentsData[pid];
+                const li = document.createElement('li');
+                li.innerText = `${p.username} ${p.isHost ? '👑' : ''}`;
+                list.appendChild(li);
+                count++;
+            }
+            document.getElementById('player-count').innerText = `${count} / 6 Players`;
+        }
+
+        window.hostStartGame = function() {
+            if(!isHost) return;
+            const level = window.generateRandomLevelStructure(); 
+            // Broadcast Start
+            const msg = { type: 'start_game', level: level };
+            connections.forEach(c => c.send(msg));
+            // Start Local
+            window.startMultiplayerGame(level);
+            document.getElementById('ui').style.display = 'block'; 
+            document.getElementById('lobby-ui').style.display = 'none';
+        }
+
+        window.backToMenu = function() {
+            if(peer) peer.destroy();
+            peer = null;
+            connections = [];
+            hostConn = null;
+            window.opponentsData = {};
+            
+            // UI Reset
+            document.getElementById('win-screen').style.display = 'none';
+            document.getElementById('ui').style.display = 'none';
+            document.getElementById('lobby-ui').style.display = 'flex';
+            document.getElementById('main-menu').style.display = 'flex';
+            document.getElementById('wait-room').style.display = 'none';
+            document.getElementById('loading-overlay').style.display = 'none';
+            
+            window.gameActive = false;
+            window.clearLevel();
+            window.changeMusicTrack();
+        }
+
+        // --- NETWORK LOOP ---
+        // Host broadcasts state ~20 times/sec
+        // Client sends state ~20 times/sec
+        setInterval(() => {
+            if(!window.gameActive || !myId) return;
+            
+            // 1. Prepare my data
+            if(window.playerBody) {
+                myState = {
+                    x: parseFloat(window.playerBody.position.x.toFixed(2)),
+                    y: parseFloat(window.playerBody.position.y.toFixed(2)),
+                    z: parseFloat(window.playerBody.position.z.toFixed(2)),
+                    rot: parseFloat(window.playerMesh.rotation.y.toFixed(2)),
+                    finished: window.hasFinished
+                };
+            }
+
+            if(isHost) {
+                // Host updates their own record in the truth source
+                if(window.opponentsData[myId]) Object.assign(window.opponentsData[myId], myState);
+                // Broadcast Truth
+                broadcastState();
+            } else if (hostConn && hostConn.open) {
+                // Client sends pos to host
+                hostConn.send({ type: 'pos', state: myState });
+            }
+        }, 50); // 50ms = 20 ticks/sec
+
+        // --- EXPOSE GLOBALS ---
+        window.createLobby = createLobby;
+        window.joinLobby = joinLobby;
+        window.hostStartGame = hostStartGame;
+
+        // --- GAME INIT ---
         function init() {
             if (typeof THREE === 'undefined' || typeof CANNON === 'undefined') {
-                console.error("Three.js or Cannon.js not loaded.");
+                console.error("Libraries not loaded.");
                 return;
             }
 
             scene = new THREE.Scene();
-            // Initial background
             scene.background = new THREE.Color(0x6a0dad); 
             scene.fog = new THREE.FogExp2(0x6a0dad, 0.006);
 
@@ -687,8 +530,6 @@
             const sun = new THREE.DirectionalLight(0xffaa00, 0.8);
             sun.position.set(50, 100, 50);
             sun.castShadow = true;
-            sun.shadow.camera.left = -100; sun.shadow.camera.right = 100;
-            sun.shadow.camera.top = 100; sun.shadow.camera.bottom = -100;
             scene.add(sun);
 
             const purpleLight = new THREE.PointLight(0xff00ff, 0.8, 200);
@@ -706,9 +547,8 @@
             });
             world.addContactMaterial(defaultContactMaterial);
 
-            createBackgroundScenery(); // Start with a random one
+            createBackgroundScenery(); 
             
-            // Input Handling
             window.addEventListener('keydown', (e) => { 
                 let key = e.key.toLowerCase();
                 if (key === ' ') key = 'space'; 
@@ -741,61 +581,31 @@
             animate();
         }
 
-        // --- MultiPlayer Start ---
         window.startMultiplayerGame = function(levelSegments) {
-            // Hide End Screen if open
             document.getElementById('win-screen').style.display = 'none';
-            
             clearLevel();
-            createBackgroundScenery(); // New Random Skybox per level
+            createBackgroundScenery(); 
             buildLevelFromSegments(levelSegments);
             createPlayer();
-            
-            // Note: Opponents are created dynamically in the update loop based on window.opponentsData
-            
             window.gameActive = true;
             gameActive = true;
             window.hasFinished = false;
             hasFinished = false;
             
             if (!audioCtx) initAudio();
-            
-            window.changeMusicTrack(); // Shuffle music on start
+            window.changeMusicTrack(); 
             updateCommentary('start');
         }
 
         // --- Audio System ---
-        
         const musicTracks = [
-            {
-                name: "Funky Bean",
-                tempo: 250,
-                bass: [110, 110, 130, 146, 110, 110, 98, 98],
-                melody: [440, 0, 523, 440, 0, 587, 523, 0],
-                bassType: 'triangle', melodyType: 'square'
-            },
-            {
-                name: "Hyper Space",
-                tempo: 200, // Faster interval
-                bass: [65, 0, 65, 0, 73, 0, 73, 0],
-                melody: [523, 523, 784, 0, 659, 0, 523, 0], 
-                bassType: 'sawtooth', melodyType: 'sawtooth'
-            },
-            {
-                name: "Retro Dash",
-                tempo: 280, 
-                bass: [87, 87, 98, 98, 110, 110, 130, 0], 
-                melody: [698, 0, 659, 0, 587, 587, 523, 0],
-                bassType: 'square', melodyType: 'triangle'
-            }
+            { name: "Funky Bean", tempo: 250, bass: [110, 110, 130, 146, 110, 110, 98, 98], melody: [440, 0, 523, 440, 0, 587, 523, 0], bassType: 'triangle', melodyType: 'square' },
+            { name: "Hyper Space", tempo: 200, bass: [65, 0, 65, 0, 73, 0, 73, 0], melody: [523, 523, 784, 0, 659, 0, 523, 0], bassType: 'sawtooth', melodyType: 'sawtooth' },
+            { name: "Retro Dash", tempo: 280, bass: [87, 87, 98, 98, 110, 110, 130, 0], melody: [698, 0, 659, 0, 587, 587, 523, 0], bassType: 'square', melodyType: 'triangle' }
         ];
-        
         window.changeMusicTrack = function() {
             currentTrack = musicTracks[Math.floor(Math.random() * musicTracks.length)];
-            // Reset interval if running will handle next loop
         }
-        
-        // Init with one
         currentTrack = musicTracks[0];
 
         function initAudio() {
@@ -830,264 +640,66 @@
         function startMusicLoop() {
             if(isPlayingMusic) return;
             isPlayingMusic = true;
-            
-            // Internal loop function to handle variable tempo
             const loop = () => {
-                if(!audioCtx || isMuted || audioCtx.state !== 'running') {
-                     setTimeout(loop, 250); return;
-                }
-                
+                if(!audioCtx || isMuted || audioCtx.state !== 'running') { setTimeout(loop, 250); return; }
                 const track = currentTrack;
                 playTone(track.bass[noteIndex % 8], 0.2, track.bassType, 0.15);
-                if(track.melody[noteIndex % 8] !== 0) {
-                    playTone(track.melody[noteIndex % 8], 0.1, track.melodyType, 0.05);
-                }
+                if(track.melody[noteIndex % 8] !== 0) playTone(track.melody[noteIndex % 8], 0.1, track.melodyType, 0.05);
                 if(noteIndex % 2 === 0) playTone(2000 + Math.random()*500, 0.05, 'sawtooth', 0.02);
                 noteIndex++;
-                
                 setTimeout(loop, track.tempo);
             };
             loop();
         }
 
         async function playPCM(base64Data) {
-            if(!audioCtx) initAudio();
-            if(audioCtx.state === 'suspended') await audioCtx.resume();
-
-            const binaryString = atob(base64Data);
-            const len = binaryString.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-            }
-            const int16 = new Int16Array(bytes.buffer);
-            const float32 = new Float32Array(int16.length);
-            for(let i=0; i<int16.length; i++) {
-                float32[i] = int16[i] / 32768.0;
-            }
-            const buffer = audioCtx.createBuffer(1, float32.length, 24000);
-            buffer.copyToChannel(float32, 0);
-            const source = audioCtx.createBufferSource();
-            source.buffer = buffer;
-            source.connect(audioCtx.destination);
-            source.start();
-            
-            document.getElementById('commentary-wave').style.display = 'inline-block';
-            source.onended = () => {
-                 document.getElementById('commentary-wave').style.display = 'none';
-            };
+            // Simplified: No key = no speech. Use Web Speech API if you want free speech later.
         }
 
         // --- Visuals & Level ---
 
         function generateSkyboxTexture(theme) {
             const canvas = document.createElement('canvas');
-            // High Res Canvas for clearer details
-            canvas.width = 4096;
-            canvas.height = 2048;
+            canvas.width = 4096; canvas.height = 2048;
             const ctx = canvas.getContext('2d');
-            const w = canvas.width;
-            const h = canvas.height;
+            const w = canvas.width; const h = canvas.height;
 
-            if (theme === 0) {
-                // Neon Space
+            if (theme === 0) { // Neon Space
                 const grad = ctx.createLinearGradient(0, 0, 0, h);
-                grad.addColorStop(0, '#000000');
-                grad.addColorStop(1, '#220033');
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, w, h);
-                
-                // Stars
+                grad.addColorStop(0, '#000000'); grad.addColorStop(1, '#220033');
+                ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
                 ctx.fillStyle = '#ffffff';
-                for(let i=0; i<800; i++) {
-                    const x = Math.random() * w;
-                    const y = Math.random() * h;
-                    const r = Math.random() * 2;
-                    ctx.beginPath();
-                    ctx.arc(x, y, r, 0, Math.PI*2);
-                    ctx.fill();
-                }
-                
-                // Nebula clouds
-                ctx.fillStyle = 'rgba(100, 0, 255, 0.05)';
-                for(let i=0; i<20; i++) {
-                    const x = Math.random() * w;
-                    const y = Math.random() * h;
-                    const r = 200 + Math.random() * 400;
-                    ctx.beginPath();
-                    ctx.arc(x, y, r, 0, Math.PI*2);
-                    ctx.fill();
-                }
-
-            } else if (theme === 1) {
-                // Sunny Day
+                for(let i=0; i<800; i++) { ctx.beginPath(); ctx.arc(Math.random()*w, Math.random()*h, Math.random()*2, 0, Math.PI*2); ctx.fill(); }
+            } else if (theme === 1) { // Sunny Day
                 const grad = ctx.createLinearGradient(0, 0, 0, h);
-                grad.addColorStop(0, '#00BFFF'); 
-                grad.addColorStop(1, '#FFFFFF'); 
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, w, h);
-
-                // Fluffy Clouds
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-                for(let i=0; i<50; i++) {
-                    const x = Math.random() * w;
-                    const y = Math.random() * (h/2); 
-                    const r = 50 + Math.random() * 100;
-                    ctx.beginPath();
-                    ctx.arc(x, y, r, 0, Math.PI*2);
-                    ctx.arc(x+r*0.7, y-r*0.2, r*0.8, 0, Math.PI*2);
-                    ctx.arc(x-r*0.7, y-r*0.2, r*0.8, 0, Math.PI*2);
-                    ctx.fill();
-                }
-
-            } else if (theme === 2) {
-                // Synth Sunset
+                grad.addColorStop(0, '#00BFFF'); grad.addColorStop(1, '#FFFFFF');
+                ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
+            } else if (theme === 2) { // Sunset
                 const grad = ctx.createLinearGradient(0, 0, 0, h);
-                grad.addColorStop(0, '#4B0082'); 
-                grad.addColorStop(0.5, '#FF4500'); 
-                grad.addColorStop(1, '#FFD700'); 
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, w, h);
-
-                // Sun
-                const gradSun = ctx.createRadialGradient(w/2, h*0.7, 10, w/2, h*0.7, 150);
-                gradSun.addColorStop(0, '#ffffcc');
-                gradSun.addColorStop(1, 'rgba(255, 255, 0, 0)');
-                ctx.fillStyle = gradSun;
-                ctx.beginPath();
-                ctx.arc(w/2, h*0.7, 150, 0, Math.PI*2);
-                ctx.fill();
-
-                // Grid Horizon
-                ctx.strokeStyle = 'rgba(255,0,255,0.2)';
-                ctx.lineWidth = 4;
-                for(let i=0; i<w; i+=100) {
-                    ctx.beginPath();
-                    ctx.moveTo(w/2, h/2);
-                    ctx.lineTo(i, h);
-                    ctx.stroke();
-                }
-
-            } else if (theme === 3) {
-                // Cyber Grid
+                grad.addColorStop(0, '#4B0082'); grad.addColorStop(0.5, '#FF4500'); grad.addColorStop(1, '#FFD700');
+                ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
+            } else { // Cyber
                 const grad = ctx.createLinearGradient(0, 0, 0, h);
-                grad.addColorStop(0, '#000000');
-                grad.addColorStop(1, '#001133');
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, w, h);
-
-                // Grid lines
-                ctx.strokeStyle = 'rgba(0, 255, 255, 0.5)';
-                ctx.lineWidth = 3;
-                
-                for(let i=0; i<w; i+=150) {
-                    ctx.beginPath();
-                    ctx.moveTo(w/2, h/2);
-                    ctx.lineTo(i, h);
-                    ctx.stroke();
-                }
-                for(let i=h/2; i<h; i+=60) {
-                    ctx.beginPath();
-                    ctx.moveTo(0, i);
-                    ctx.lineTo(w, i);
-                    ctx.stroke();
-                }
-            } else if (theme === 4) {
-                // Midnight City
-                const grad = ctx.createLinearGradient(0, 0, 0, h);
-                grad.addColorStop(0, '#000033'); // Dark Blue
-                grad.addColorStop(1, '#440044'); // Purple bottom
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, w, h);
-                
-                // City Skyline
-                ctx.fillStyle = '#000000';
-                let x = 0;
-                while(x < w) {
-                    let bw = 30 + Math.random() * 80;
-                    let bh = 50 + Math.random() * 200;
-                    ctx.fillRect(x, h - bh, bw, bh);
-                    
-                    // Windows
-                    ctx.fillStyle = Math.random() > 0.5 ? '#ffff00' : '#00ffff';
-                    for(let wy = h-bh+10; wy < h; wy+=20) {
-                        if(Math.random() > 0.3) ctx.fillRect(x+5, wy, 5, 10);
-                        if(Math.random() > 0.3) ctx.fillRect(x+bw-15, wy, 5, 10);
-                    }
-                    ctx.fillStyle = '#000000'; // Reset for next building
-                    x += bw;
-                }
-            } else if (theme === 5) {
-                // Candy Land
-                const grad = ctx.createLinearGradient(0, 0, 0, h);
-                grad.addColorStop(0, '#FFC0CB'); // Pink
-                grad.addColorStop(1, '#E0FFFF'); // Light Cyan
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, w, h);
-                
-                // Pastel Clouds
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-                for(let i=0; i<30; i++) {
-                    const x = Math.random() * w;
-                    const y = Math.random() * h/1.5;
-                    const r = 40 + Math.random() * 60;
-                    ctx.beginPath();
-                    ctx.arc(x, y, r, 0, Math.PI*2);
-                    ctx.arc(x+r, y, r*0.8, 0, Math.PI*2);
-                    ctx.fill();
-                }
-            } else {
-                // Toxic Storm
-                const grad = ctx.createLinearGradient(0, 0, 0, h);
-                grad.addColorStop(0, '#2F4F4F'); // Dark Slate Gray
-                grad.addColorStop(1, '#006400'); // Dark Green
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, w, h);
-                
-                // Smog
-                ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
-                for(let i=0; i<100; i++) {
-                    const x = Math.random() * w;
-                    const y = Math.random() * h;
-                    const r = 100 + Math.random() * 200;
-                    ctx.beginPath();
-                    ctx.arc(x, y, r, 0, Math.PI*2);
-                    ctx.fill();
-                }
+                grad.addColorStop(0, '#000000'); grad.addColorStop(1, '#001133');
+                ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
+                ctx.strokeStyle = 'rgba(0, 255, 255, 0.5)'; ctx.lineWidth = 3;
+                for(let i=0; i<w; i+=150) { ctx.beginPath(); ctx.moveTo(w/2, h/2); ctx.lineTo(i, h); ctx.stroke(); }
             }
-
-            const texture = new THREE.CanvasTexture(canvas);
-            return texture;
+            return new THREE.CanvasTexture(canvas);
         }
 
         function createBackgroundScenery() {
-            // Clear previous objects
             backgroundObjects.forEach(obj => scene.remove(obj));
             backgroundObjects = [];
-
-            const theme = Math.floor(Math.random() * 7); // 7 themes now
+            const theme = Math.floor(Math.random() * 4);
             const texture = generateSkyboxTexture(theme);
-            
-            // Adjust Fog based on theme
-            if (theme === 0) scene.fog = new THREE.FogExp2(0x110022, 0.002); // Space
-            else if (theme === 1) scene.fog = new THREE.FogExp2(0x87CEFA, 0.002); // Sunny
-            else if (theme === 2) scene.fog = new THREE.FogExp2(0x4B0082, 0.0025); // Sunset
-            else if (theme === 3) scene.fog = new THREE.FogExp2(0x001133, 0.003); // Cyber
-            else if (theme === 4) scene.fog = new THREE.FogExp2(0x220022, 0.003); // City
-            else if (theme === 5) scene.fog = new THREE.FogExp2(0xFFC0CB, 0.002); // Candy
-            else scene.fog = new THREE.FogExp2(0x003300, 0.004); // Toxic
-
-            // Create huge sphere
-            const geo = new THREE.SphereGeometry(800, 60, 40); // Higher poly for smoothness
-            // BackSide to view from inside, fog: false to keep it vivid
+            const geo = new THREE.SphereGeometry(800, 60, 40);
             const mat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide, fog: false });
             const skybox = new THREE.Mesh(geo, mat);
-            
             scene.add(skybox);
             backgroundObjects.push(skybox);
         }
 
-        // Expose for host
         window.generateRandomLevelStructure = function() {
             const types = ['path', 'narrow', 'hammers', 'tilts', 'walls', 'ramp_up', 'ramp_down', 'shift_left', 'shift_right', 'split_hammers_walls', 'split_ramp_tunnel'];
             const length = 25 + Math.floor(Math.random() * 15); 
@@ -1106,59 +718,16 @@
         }
 
         async function updateCommentary(eventType) {
-            // Simplified commentary for now to reduce API calls in multiplayer
             if(!gameActive) return;
             const now = Date.now();
             if(now - lastCommentaryTime < 8000 && eventType !== 'checkpoint') return;
             lastCommentaryTime = now;
-
             const boxText = document.getElementById('commentary-text');
-            let promptText = "";
-
-            if (eventType === 'start') promptText = "Say excitedly: Welcome to Tumble Dudes Multiplayer! Race to the finish!";
-            else if (eventType === 'fall') promptText = "Say mockingly: Someone took a massive fall!";
-            else if (eventType === 'checkpoint') promptText = "Say fast: Checkpoint reached!";
-            else if (eventType === 'finish') promptText = `Say cheeringly: We have a finisher! Incredible performance!`;
-            
-            if(!promptText) return;
-
-            // Fallback visuals immediately
             boxText.innerText = `🎙️ "${eventType.toUpperCase()}"`;
             document.getElementById('commentary-box').style.opacity = 1;
-
-            if (!apiKey) return; // Prevent API call if no key
-
-            try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: promptText }] }],
-                        generationConfig: {
-                            responseModalities: ["AUDIO"],
-                            speechConfig: {
-                                voiceConfig: {
-                                    prebuiltVoiceConfig: { voiceName: "Puck" }
-                                }
-                            }
-                        }
-                    })
-                });
-
-                const data = await response.json();
-                // FIX: Optional chaining
-                const pcmData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-                
-                if(pcmData) {
-                    playPCM(pcmData);
-                    // visual text already set above
-                }
-            } catch (e) { console.error("TTS Error", e); }
         }
 
-
         // --- Level System ---
-
         let levelObjects = [];
         let currentPos = { x: -5, y: -0.5, z: 0 };
 
@@ -1168,343 +737,111 @@
             const mesh = new THREE.Mesh(geo, mat);
             mesh.position.set(x, y, z);
             mesh.rotation.set(rotX, rotY, rotZ);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
+            mesh.castShadow = true; mesh.receiveShadow = true;
             scene.add(mesh);
-
             const shape = new CANNON.Box(new CANNON.Vec3(w/2, h/2, d/2));
             const body = new CANNON.Body({ mass: mass, material: world.defaultMaterial });
-            body.addShape(shape);
-            body.position.set(x, y, z);
-            
-            const q = new CANNON.Quaternion();
-            q.setFromEuler(rotX, rotY, rotZ);
-            body.quaternion.copy(q);
-
+            body.addShape(shape); body.position.set(x, y, z);
+            const q = new CANNON.Quaternion(); q.setFromEuler(rotX, rotY, rotZ); body.quaternion.copy(q);
             world.addBody(body);
-
             const obj = { mesh, body, type: 'static' };
             levelObjects.push(obj);
             return obj;
         }
 
         window.clearLevel = function() {
-            levelObjects.forEach(obj => {
-                scene.remove(obj.mesh);
-                world.removeBody(obj.body);
-            });
-            levelObjects = [];
-            obstacles = [];
-            currentPos = { x: -5, y: -0.5, z: 0 };
-            
-            // Checkpoint Reset
-            currentRespawnPos = { x: -5, y: 5, z: 0 };
-            checkpointPos = null;
-            checkpointActivated = false;
-            window.checkpointFlagMat = null;
-
-            // Cleanup player if existing
-            if(player) {
-                scene.remove(player.mesh);
-                world.removeBody(player.body);
-                player = null;
-                window.playerBody = null;
-                window.playerMesh = null;
-            }
-            // Cleanup opponents
-            for(let uid in opponents) {
-                scene.remove(opponents[uid].mesh);
-            }
+            levelObjects.forEach(obj => { scene.remove(obj.mesh); world.removeBody(obj.body); });
+            levelObjects = []; obstacles = []; currentPos = { x: -5, y: -0.5, z: 0 };
+            currentRespawnPos = { x: -5, y: 5, z: 0 }; checkpointPos = null; checkpointActivated = false; window.checkpointFlagMat = null;
+            if(player) { scene.remove(player.mesh); world.removeBody(player.body); player = null; window.playerBody = null; window.playerMesh = null; }
+            for(let uid in opponents) { scene.remove(opponents[uid].mesh); }
             opponents = {};
         }
 
         function createCheckpointVisual(x, y, z) {
-            // Pole
             const poleGeo = new THREE.CylinderGeometry(0.5, 0.5, 10);
             const poleMat = new THREE.MeshPhongMaterial({ color: 0x888888 });
-            const pole = new THREE.Mesh(poleGeo, poleMat);
-            pole.position.set(x, y + 5, z - 12); // To the left
-            scene.add(pole);
-            const dummyBody = new CANNON.Body({ mass: 0 }); // won't be added to world
+            const pole = new THREE.Mesh(poleGeo, poleMat); pole.position.set(x, y + 5, z - 12); scene.add(pole);
+            const dummyBody = new CANNON.Body({ mass: 0 }); 
             levelObjects.push({ mesh: pole, body: dummyBody });
-
-            // Flag
             const flagGeo = new THREE.BoxGeometry(4, 3, 0.5);
-            const flagMat = new THREE.MeshPhongMaterial({ color: 0xff0000 }); // Red
-            const flag = new THREE.Mesh(flagGeo, flagMat);
-            flag.position.set(x + 2, y + 8, z - 12);
-            scene.add(flag);
+            const flagMat = new THREE.MeshPhongMaterial({ color: 0xff0000 }); 
+            const flag = new THREE.Mesh(flagGeo, flagMat); flag.position.set(x + 2, y + 8, z - 12); scene.add(flag);
             levelObjects.push({ mesh: flag, body: dummyBody });
-            
             window.checkpointFlagMat = flagMat;
         }
 
         function buildLevelFromSegments(segments) {
             currentPos = { x: -5, y: -0.5, z: 0 };
             const midIndex = Math.floor(segments.length / 2);
-            
             segments.forEach((seg, index) => {
                 const baseColor = index % 2 === 0 ? 0xdddddd : 0xcccccc;
-
-                // Checkpoint Logic: Place at start of middle segment, slightly forward (+10)
                 if (index === midIndex) {
-                    // Safe spawn coordinate relative to segment start
-                    // We record the current Z before potential shifts modify it for the next block
-                    // But we push X forward to ensure we land on the platform
                     checkpointPos = { x: currentPos.x + 10, y: currentPos.y + 2, z: currentPos.z }; 
                     createCheckpointVisual(currentPos.x + 10, currentPos.y, currentPos.z);
-                    
-                    // --- FIX: Add Safety Platform ---
-                    // Create a large, wide platform under the checkpoint to guarantee a landing zone
-                    // Lowered by 0.2 to prevent Z-fighting with main track
                     createBox(25, 1, 25, currentPos.x + 10, currentPos.y - 0.2, currentPos.z, 0x66ff66);
                 }
-
                 switch(seg) {
-                    case 'start':
-                        createBox(15, 1, 20, currentPos.x, currentPos.y, currentPos.z, 0x44cc44);
-                        currentPos.x += 15;
-                        break;
-                    case 'path':
-                        createBox(30, 1, 10, currentPos.x + 15, currentPos.y, currentPos.z, baseColor);
-                        currentPos.x += 30;
-                        break;
-                    case 'narrow':
-                        createBox(20, 1, 2, currentPos.x + 10, currentPos.y, currentPos.z, 0xffaa00);
-                        currentPos.x += 20;
-                        break;
-                    case 'ramp_up':
-                        const rampLen = 30; const rise = 10;
-                        const angle = Math.atan2(rise, rampLen); 
-                        const hyp = Math.sqrt(rampLen*rampLen + rise*rise);
-                        createBox(hyp, 1, 10, currentPos.x + rampLen/2, currentPos.y + rise/2, currentPos.z, 0xff00ff, 0, 0, 0, angle);
-                        currentPos.x += rampLen; currentPos.y += rise;
-                        break;
-                    case 'ramp_down':
-                        const rampLenD = 30; const drop = 10;
-                        const angleD = -Math.atan2(drop, rampLenD);
-                        const hypD = Math.sqrt(rampLenD*rampLenD + drop*drop);
-                        createBox(hypD, 1, 10, currentPos.x + rampLenD/2, currentPos.y - drop/2, currentPos.z, 0x00ffff, 0, 0, 0, angleD);
-                        currentPos.x += rampLenD; currentPos.y -= drop;
-                        break;
-                    case 'shift_left':
-                        const diagLen = Math.sqrt(20*20 + 20*20);
-                        createBox(diagLen, 1, 10, currentPos.x + 10, currentPos.y, currentPos.z - 10, 0xffff00, 0, 0, -Math.PI/4, 0);
-                        currentPos.x += 20; currentPos.z -= 20;
-                        break;
-                    case 'shift_right':
-                        const diagLenR = Math.sqrt(20*20 + 20*20);
-                        createBox(diagLenR, 1, 10, currentPos.x + 10, currentPos.y, currentPos.z + 10, 0xffff00, 0, 0, Math.PI/4, 0);
-                        currentPos.x += 20; currentPos.z += 20;
-                        break;
-                    case 'walls':
-                        createBox(25, 1, 10, currentPos.x + 12.5, currentPos.y, currentPos.z, baseColor);
-                        createBox(1, 4, 10, currentPos.x + 8, currentPos.y + 2, currentPos.z, 0x5555ff);
-                        createBox(1, 4, 10, currentPos.x + 16, currentPos.y + 2, currentPos.z, 0x5555ff);
-                        currentPos.x += 25;
-                        break;
-                    case 'hammers':
-                        createBox(25, 1, 10, currentPos.x + 12.5, currentPos.y, currentPos.z, 0x888888);
-                        const hX = currentPos.x + 12.5; const hY = currentPos.y; const hZ = currentPos.z;
-                        const hammerBase = createBox(1, 6, 1, hX, hY + 3, hZ, 0x222222);
-                        const hammerHead = createBox(8, 1, 1, hX, hY + 6, hZ, 0xff2222, 10);
-                        hammerHead.body.type = CANNON.Body.KINEMATIC; 
-                        obstacles.push({ ...hammerHead, type: 'spinner', speed: 3 });
-                        currentPos.x += 25;
-                        break;
-                    case 'tilts':
-                        for(let i=0; i<2; i++) {
-                            const p = createBox(8, 0.5, 8, currentPos.x + 8 + (i*10), currentPos.y + 0.5, currentPos.z, 0x33aaff, 10);
-                            p.body.type = CANNON.Body.KINEMATIC;
-                            obstacles.push({ ...p, type: 'tilt', speed: 1.5, offset: i });
-                        }
-                        currentPos.x += 25;
-                        break;
-
-                    case 'split_hammers_walls':
-                        // Length 40
-                        // Left Path (Hammers)
-                        createBox(40, 1, 8, currentPos.x + 20, currentPos.y, currentPos.z - 8, baseColor);
-                        const h1 = createBox(8, 1, 1, currentPos.x + 10, currentPos.y + 6, currentPos.z - 8, 0xff2222, 10);
-                        h1.body.type = CANNON.Body.KINEMATIC;
-                        obstacles.push({ ...h1, type: 'spinner', speed: 4 });
-                        const h2 = createBox(8, 1, 1, currentPos.x + 30, currentPos.y + 6, currentPos.z - 8, 0xff2222, 10);
-                        h2.body.type = CANNON.Body.KINEMATIC;
-                        obstacles.push({ ...h2, type: 'spinner', speed: -4 });
-
-                        // Right Path (Walls)
-                        createBox(40, 1, 8, currentPos.x + 20, currentPos.y, currentPos.z + 8, baseColor);
-                        createBox(1, 4, 8, currentPos.x + 10, currentPos.y + 2, currentPos.z + 8, 0x5555ff);
-                        createBox(1, 4, 8, currentPos.x + 20, currentPos.y + 2, currentPos.z + 8, 0x5555ff);
-                        createBox(1, 4, 8, currentPos.x + 30, currentPos.y + 2, currentPos.z + 8, 0x5555ff);
-
-                        currentPos.x += 40;
-                        break;
-
-                    case 'split_ramp_tunnel':
-                        // Length 50
-                        // High Path (Left)
-                        // Ramp up 20, flat 10, ramp down 20
-                        // Rise 8
-                        const riseH = 8;
-                        const angleH = Math.atan2(riseH, 20);
-                        const hypH = Math.sqrt(20*20 + riseH*riseH);
-                        
-                        // Up
-                        createBox(hypH, 1, 8, currentPos.x + 10, currentPos.y + riseH/2, currentPos.z - 8, 0xff00ff, 0, 0, 0, angleH);
-                        // Flat top
-                        createBox(10, 1, 8, currentPos.x + 25, currentPos.y + riseH, currentPos.z - 8, 0xff00ff);
-                        // Down
-                        createBox(hypH, 1, 8, currentPos.x + 40, currentPos.y + riseH/2, currentPos.z - 8, 0xff00ff, 0, 0, 0, -angleH);
-
-                        // Low Path (Right) - Tunnel
-                        createBox(50, 1, 8, currentPos.x + 25, currentPos.y, currentPos.z + 8, baseColor);
-                        // Roof over low path to make it a tunnel
-                        createBox(50, 1, 8, currentPos.x + 25, currentPos.y + 5, currentPos.z + 8, 0x555555);
-
-                        currentPos.x += 50;
-                        break;
-
-                    case 'finish':
-                        finishLineX = currentPos.x;
-                        createBox(20, 1, 20, currentPos.x + 10, currentPos.y, currentPos.z, 0xffd700);
-                        const arch = createBox(2, 8, 10, currentPos.x, currentPos.y + 4.5, currentPos.z, 0xffd700);
-                        arch.mesh.material.transparent = true;
-                        arch.mesh.material.opacity = 0.5;
-                        arch.body.collisionFilterGroup = 0;
-                        break;
+                    case 'start': createBox(15, 1, 20, currentPos.x, currentPos.y, currentPos.z, 0x44cc44); currentPos.x += 15; break;
+                    case 'path': createBox(30, 1, 10, currentPos.x + 15, currentPos.y, currentPos.z, baseColor); currentPos.x += 30; break;
+                    case 'narrow': createBox(20, 1, 2, currentPos.x + 10, currentPos.y, currentPos.z, 0xffaa00); currentPos.x += 20; break;
+                    case 'ramp_up': { const rampLen = 30; const rise = 10; const angle = Math.atan2(rise, rampLen); const hyp = Math.sqrt(rampLen*rampLen + rise*rise); createBox(hyp, 1, 10, currentPos.x + rampLen/2, currentPos.y + rise/2, currentPos.z, 0xff00ff, 0, 0, 0, angle); currentPos.x += rampLen; currentPos.y += rise; break; }
+                    case 'ramp_down': { const rampLenD = 30; const drop = 10; const angleD = -Math.atan2(drop, rampLenD); const hypD = Math.sqrt(rampLenD*rampLenD + drop*drop); createBox(hypD, 1, 10, currentPos.x + rampLenD/2, currentPos.y - drop/2, currentPos.z, 0x00ffff, 0, 0, 0, angleD); currentPos.x += rampLenD; currentPos.y -= drop; break; }
+                    case 'shift_left': createBox(Math.sqrt(800), 1, 10, currentPos.x + 10, currentPos.y, currentPos.z - 10, 0xffff00, 0, 0, -Math.PI/4, 0); currentPos.x += 20; currentPos.z -= 20; break;
+                    case 'shift_right': createBox(Math.sqrt(800), 1, 10, currentPos.x + 10, currentPos.y, currentPos.z + 10, 0xffff00, 0, 0, Math.PI/4, 0); currentPos.x += 20; currentPos.z += 20; break;
+                    case 'walls': createBox(25, 1, 10, currentPos.x + 12.5, currentPos.y, currentPos.z, baseColor); createBox(1, 4, 10, currentPos.x + 8, currentPos.y + 2, currentPos.z, 0x5555ff); createBox(1, 4, 10, currentPos.x + 16, currentPos.y + 2, currentPos.z, 0x5555ff); currentPos.x += 25; break;
+                    case 'hammers': { createBox(25, 1, 10, currentPos.x + 12.5, currentPos.y, currentPos.z, 0x888888); const hX = currentPos.x + 12.5; const hY = currentPos.y; const hZ = currentPos.z; createBox(1, 6, 1, hX, hY + 3, hZ, 0x222222); const hammerHead = createBox(8, 1, 1, hX, hY + 6, hZ, 0xff2222, 10); hammerHead.body.type = CANNON.Body.KINEMATIC; obstacles.push({ ...hammerHead, type: 'spinner', speed: 3 }); currentPos.x += 25; break; }
+                    case 'tilts': { for(let i=0; i<2; i++) { const p = createBox(8, 0.5, 8, currentPos.x + 8 + (i*10), currentPos.y + 0.5, currentPos.z, 0x33aaff, 10); p.body.type = CANNON.Body.KINEMATIC; obstacles.push({ ...p, type: 'tilt', speed: 1.5, offset: i }); } currentPos.x += 25; break; }
+                    case 'split_hammers_walls': { createBox(40, 1, 8, currentPos.x + 20, currentPos.y, currentPos.z - 8, baseColor); const h1 = createBox(8, 1, 1, currentPos.x + 10, currentPos.y + 6, currentPos.z - 8, 0xff2222, 10); h1.body.type = CANNON.Body.KINEMATIC; obstacles.push({ ...h1, type: 'spinner', speed: 4 }); const h2 = createBox(8, 1, 1, currentPos.x + 30, currentPos.y + 6, currentPos.z - 8, 0xff2222, 10); h2.body.type = CANNON.Body.KINEMATIC; obstacles.push({ ...h2, type: 'spinner', speed: -4 }); createBox(40, 1, 8, currentPos.x + 20, currentPos.y, currentPos.z + 8, baseColor); createBox(1, 4, 8, currentPos.x + 10, currentPos.y + 2, currentPos.z + 8, 0x5555ff); createBox(1, 4, 8, currentPos.x + 20, currentPos.y + 2, currentPos.z + 8, 0x5555ff); createBox(1, 4, 8, currentPos.x + 30, currentPos.y + 2, currentPos.z + 8, 0x5555ff); currentPos.x += 40; break; }
+                    case 'split_ramp_tunnel': { const riseH = 8; const angleH = Math.atan2(riseH, 20); const hypH = Math.sqrt(20*20 + riseH*riseH); createBox(hypH, 1, 8, currentPos.x + 10, currentPos.y + riseH/2, currentPos.z - 8, 0xff00ff, 0, 0, 0, angleH); createBox(10, 1, 8, currentPos.x + 25, currentPos.y + riseH, currentPos.z - 8, 0xff00ff); createBox(hypH, 1, 8, currentPos.x + 40, currentPos.y + riseH/2, currentPos.z - 8, 0xff00ff, 0, 0, 0, -angleH); createBox(50, 1, 8, currentPos.x + 25, currentPos.y, currentPos.z + 8, baseColor); createBox(50, 1, 8, currentPos.x + 25, currentPos.y + 5, currentPos.z + 8, 0x555555); currentPos.x += 50; break; }
+                    case 'finish': { finishLineX = currentPos.x; createBox(20, 1, 20, currentPos.x + 10, currentPos.y, currentPos.z, 0xffd700); const arch = createBox(2, 8, 10, currentPos.x, currentPos.y + 4.5, currentPos.z, 0xffd700); arch.mesh.material.transparent = true; arch.mesh.material.opacity = 0.5; arch.body.collisionFilterGroup = 0; break; }
                 }
             });
         }
 
         // --- Actors ---
-        
         function createFaceTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 128;
-            canvas.height = 128;
-            const ctx = canvas.getContext('2d');
-
-            // Skin background
-            ctx.fillStyle = '#ffccaa';
-            ctx.fillRect(0, 0, 128, 128);
-
-            // Random Eyes
-            ctx.fillStyle = '#000000';
-            const eyeY = 50;
-            const eyeXOffset = 20 + Math.random() * 15;
-            const eyeSize = 8 + Math.random() * 10;
-            
-            // Left Eye
-            ctx.beginPath();
-            ctx.arc(64 - eyeXOffset, eyeY, eyeSize, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Right Eye
-            ctx.beginPath();
-            ctx.arc(64 + eyeXOffset, eyeY, eyeSize, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Random Mouth
-            ctx.lineWidth = 6;
-            ctx.strokeStyle = '#000000';
-            ctx.beginPath();
+            const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 128; const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffccaa'; ctx.fillRect(0, 0, 128, 128); ctx.fillStyle = '#000000';
+            const eyeY = 50; const eyeXOffset = 20 + Math.random() * 15; const eyeSize = 8 + Math.random() * 10;
+            ctx.beginPath(); ctx.arc(64 - eyeXOffset, eyeY, eyeSize, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(64 + eyeXOffset, eyeY, eyeSize, 0, Math.PI * 2); ctx.fill();
+            ctx.lineWidth = 6; ctx.strokeStyle = '#000000'; ctx.beginPath();
             const mouthType = Math.floor(Math.random() * 4);
-            if (mouthType === 0) {
-                // Smile
-                ctx.arc(64, 80, 20, 0, Math.PI, false);
-            } else if (mouthType === 1) {
-                // Frown
-                ctx.arc(64, 100, 20, Math.PI, 0, false);
-            } else if (mouthType === 2) {
-                // O face
-                ctx.arc(64, 90, 15, 0, Math.PI * 2);
-            } else {
-                // Straight
-                ctx.moveTo(44, 90);
-                ctx.lineTo(84, 90);
-            }
-            ctx.stroke();
-
-            return new THREE.CanvasTexture(canvas);
+            if (mouthType === 0) ctx.arc(64, 80, 20, 0, Math.PI, false);
+            else if (mouthType === 1) ctx.arc(64, 100, 20, Math.PI, 0, false);
+            else if (mouthType === 2) ctx.arc(64, 90, 15, 0, Math.PI * 2);
+            else { ctx.moveTo(44, 90); ctx.lineTo(84, 90); }
+            ctx.stroke(); return new THREE.CanvasTexture(canvas);
         }
 
         function createHumanoid(color) {
             const group = new THREE.Group();
-            
             const headGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-            
-            // Create face materials (Right, Left, Top, Bottom, Front, Back)
             const skinMat = new THREE.MeshPhongMaterial({ color: 0xffccaa }); 
-            const faceTexture = createFaceTexture();
-            const faceMat = new THREE.MeshPhongMaterial({ color: 0xffccaa, map: faceTexture });
-            
-            // Apply face texture only to the Front (+Z, index 4)
-            const headMaterials = [
-                skinMat, // +x
-                skinMat, // -x
-                skinMat, // +y
-                skinMat, // -y
-                faceMat, // +z (Front)
-                skinMat  // -z
-            ];
-
-            const head = new THREE.Mesh(headGeo, headMaterials);
-            head.position.y = 0.85; head.castShadow = true;
-            group.add(head);
-
-            const bodyGeo = new THREE.BoxGeometry(0.6, 0.7, 0.35);
-            const bodyMat = new THREE.MeshPhongMaterial({ color: color }); 
-            const body = new THREE.Mesh(bodyGeo, bodyMat);
-            body.position.y = 0.2; body.castShadow = true;
-            group.add(body);
-
-            const armGeo = new THREE.BoxGeometry(0.2, 0.7, 0.2);
-            const armMat = new THREE.MeshPhongMaterial({ color: 0xffccaa });
-            
-            const armL = new THREE.Mesh(armGeo, armMat);
-            armL.position.set(-0.45, 0.2, 0); armL.name = "armL"; armL.castShadow = true;
-            group.add(armL);
-
-            const armR = new THREE.Mesh(armGeo, armMat);
-            armR.position.set(0.45, 0.2, 0); armR.name = "armR"; armR.castShadow = true;
-            group.add(armR);
-
-            const legGeo = new THREE.BoxGeometry(0.22, 0.8, 0.22);
-            const legMat = new THREE.MeshPhongMaterial({ color: 0x333333 }); 
-            
-            const legL = new THREE.Mesh(legGeo, legMat);
-            legL.position.set(-0.2, -0.6, 0); legL.name = "legL"; legL.castShadow = true;
-            group.add(legL);
-
-            const legR = new THREE.Mesh(legGeo, legMat);
-            legR.position.set(0.2, -0.6, 0); legR.name = "legR"; legR.castShadow = true;
-            group.add(legR);
-
+            const faceTexture = createFaceTexture(); const faceMat = new THREE.MeshPhongMaterial({ color: 0xffccaa, map: faceTexture });
+            const headMaterials = [skinMat, skinMat, skinMat, skinMat, faceMat, skinMat];
+            const head = new THREE.Mesh(headGeo, headMaterials); head.position.y = 0.85; head.castShadow = true; group.add(head);
+            const bodyGeo = new THREE.BoxGeometry(0.6, 0.7, 0.35); const bodyMat = new THREE.MeshPhongMaterial({ color: color }); 
+            const body = new THREE.Mesh(bodyGeo, bodyMat); body.position.y = 0.2; body.castShadow = true; group.add(body);
+            const armGeo = new THREE.BoxGeometry(0.2, 0.7, 0.2); const armMat = new THREE.MeshPhongMaterial({ color: 0xffccaa });
+            const armL = new THREE.Mesh(armGeo, armMat); armL.position.set(-0.45, 0.2, 0); armL.name = "armL"; armL.castShadow = true; group.add(armL);
+            const armR = new THREE.Mesh(armGeo, armMat); armR.position.set(0.45, 0.2, 0); armR.name = "armR"; armR.castShadow = true; group.add(armR);
+            const legGeo = new THREE.BoxGeometry(0.22, 0.8, 0.22); const legMat = new THREE.MeshPhongMaterial({ color: 0x333333 }); 
+            const legL = new THREE.Mesh(legGeo, legMat); legL.position.set(-0.2, -0.6, 0); legL.name = "legL"; legL.castShadow = true; group.add(legL);
+            const legR = new THREE.Mesh(legGeo, legMat); legR.position.set(0.2, -0.6, 0); legR.name = "legR"; legR.castShadow = true; group.add(legR);
             return group;
         }
 
         function createPlayer() {
-            const mesh = createHumanoid(0x00ff00); 
-            scene.add(mesh);
-            playerMesh = mesh;
-            window.playerMesh = mesh;
-
-            const shape = new CANNON.Sphere(0.6);
-            playerBody = new CANNON.Body({ mass: 1, fixedRotation: true, material: world.defaultMaterial });
-            playerBody.addShape(shape);
-            playerBody.position.set(-5, 5, 0);
-            playerBody.linearDamping = 0.0;
-            world.addBody(playerBody);
-
-            player = { mesh, body: playerBody, isPlayer: true };
-            window.playerBody = playerBody;
+            const mesh = createHumanoid(0x00ff00); scene.add(mesh); playerMesh = mesh; window.playerMesh = mesh;
+            const shape = new CANNON.Sphere(0.6); playerBody = new CANNON.Body({ mass: 1, fixedRotation: true, material: world.defaultMaterial });
+            playerBody.addShape(shape); playerBody.position.set(-5, 5, 0); playerBody.linearDamping = 0.0; world.addBody(playerBody);
+            player = { mesh, body: playerBody, isPlayer: true }; window.playerBody = playerBody;
         }
 
-        // --- Game Logic ---
         function updatePhysics() {
             world.step(1/60);
-
             let isGrounded = false;
             for(let i = 0; i < world.contacts.length; i++) {
                 const c = world.contacts[i];
@@ -1513,240 +850,142 @@
                     else { if(c.ni.y > 0.5) isGrounded = true; }
                 }
             }
-            
-            if (isGrounded) {
-                lastGroundedTime = Date.now();
-            }
-
+            if (isGrounded) lastGroundedTime = Date.now();
             const time = Date.now() * 0.001;
-            
             obstacles.forEach(obs => {
-                if(obs.type === 'spinner') {
-                    obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), time * obs.speed);
-                } else if(obs.type === 'tilt') {
-                    obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), Math.sin(time * obs.speed + obs.offset) * 0.5);
-                }
-                obs.mesh.position.copy(obs.body.position);
-                obs.mesh.quaternion.copy(obs.body.quaternion);
+                if(obs.type === 'spinner') obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), time * obs.speed);
+                else if(obs.type === 'tilt') obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), Math.sin(time * obs.speed + obs.offset) * 0.5);
+                obs.mesh.position.copy(obs.body.position); obs.mesh.quaternion.copy(obs.body.quaternion);
             });
 
             if(gameActive) {
-                // Checkpoint Activation Logic
+                // Checkpoint
                 if(checkpointPos && !checkpointActivated && playerBody.position.x > checkpointPos.x) {
-                    checkpointActivated = true;
-                    // Respawn slightly higher to be safe
-                    // Use captured Z coordinate and X position
-                    currentRespawnPos = { x: checkpointPos.x, y: checkpointPos.y + 10, z: checkpointPos.z };
-                    
-                    // Update visuals
-                    if(window.checkpointFlagMat) {
-                        window.checkpointFlagMat.color.setHex(0x00ff00); // Green
-                    }
-                    playTone(880, 0.1, 'sine', 0.2); // Ding sound
-                    setTimeout(() => playTone(1100, 0.2, 'sine', 0.2), 100);
-                    
+                    checkpointActivated = true; currentRespawnPos = { x: checkpointPos.x, y: checkpointPos.y + 10, z: checkpointPos.z };
+                    if(window.checkpointFlagMat) window.checkpointFlagMat.color.setHex(0x00ff00);
+                    playTone(880, 0.1, 'sine', 0.2); setTimeout(() => playTone(1100, 0.2, 'sine', 0.2), 100);
                     updateCommentary('checkpoint');
                 }
 
-                // --- OPPONENT SYNC & RENDER ---
-                // We iterate over the window.opponentsData object which is updated by Firestore
+                // Update Opponents
                 for (const uid in window.opponentsData) {
                     const data = window.opponentsData[uid];
+                    if(uid === myId) continue; 
                     if (!opponents[uid]) {
-                        // New player connected! Create mesh.
-                        const mesh = createHumanoid(0xff0000); // Red for enemies
-                        scene.add(mesh);
-                        opponents[uid] = { 
-                            mesh: mesh, 
-                            lastPos: new THREE.Vector3(data.state.x, data.state.y, data.state.z) 
-                        };
+                        const mesh = createHumanoid(0xff0000); scene.add(mesh);
+                        opponents[uid] = { mesh: mesh, lastPos: new THREE.Vector3(data.x, data.y, data.z) };
                     }
-                    
                     const opp = opponents[uid];
-                    
-                    // Determine if opponent is moving for animation
-                    let speed = 0;
-                    if(data.state) {
-                        const currentPos = new THREE.Vector3(data.state.x, data.state.y, data.state.z);
-                        // Approximate speed based on distance moved since last frame
-                        speed = currentPos.distanceTo(opp.lastPos) * 60; // scale up for animation logic
-                        opp.lastPos.copy(currentPos); // update last pos
-
-                        // Lerp Position
-                        opp.mesh.position.lerp(new THREE.Vector3(data.state.x, data.state.y - 0.1, data.state.z), 0.1);
-                        opp.mesh.rotation.y = data.state.rot;
-                    }
-
-                    // --- ANIMATE OPPONENT ---
-                    const armL = opp.mesh.getObjectByName('armL');
-                    const armR = opp.mesh.getObjectByName('armR');
-                    const legL = opp.mesh.getObjectByName('legL');
-                    const legR = opp.mesh.getObjectByName('legR');
-
-                    if(speed > 0.5) { // Threshold for animation
+                    const currentPos = new THREE.Vector3(data.x, data.y, data.z);
+                    const speed = currentPos.distanceTo(opp.lastPos) * 60; 
+                    opp.lastPos.copy(currentPos);
+                    opp.mesh.position.lerp(new THREE.Vector3(data.x, data.y - 0.1, data.z), 0.2); // Faster lerp for P2P
+                    opp.mesh.rotation.y = data.rot;
+                    // Anim
+                    const armL = opp.mesh.getObjectByName('armL'); const armR = opp.mesh.getObjectByName('armR');
+                    const legL = opp.mesh.getObjectByName('legL'); const legR = opp.mesh.getObjectByName('legR');
+                    if(speed > 0.5) {
                         const runTime = Date.now() * 0.015;
-                        if(armL) armL.rotation.x = Math.sin(runTime) * 0.8;
-                        if(armR) armR.rotation.x = -Math.sin(runTime) * 0.8;
-                        if(legL) legL.rotation.x = -Math.sin(runTime) * 0.8;
-                        if(legR) legR.rotation.x = Math.sin(runTime) * 0.8;
+                        if(armL) armL.rotation.x = Math.sin(runTime) * 0.8; if(armR) armR.rotation.x = -Math.sin(runTime) * 0.8;
+                        if(legL) legL.rotation.x = -Math.sin(runTime) * 0.8; if(legR) legR.rotation.x = Math.sin(runTime) * 0.8;
                     } else {
-                        // Idle
-                        if(armL) armL.rotation.x = 0;
-                        if(armR) armR.rotation.x = 0;
-                        if(legL) legL.rotation.x = 0;
-                        if(legR) legR.rotation.x = 0;
+                        if(armL) armL.rotation.x = 0; if(armR) armR.rotation.x = 0; if(legL) legL.rotation.x = 0; if(legR) legR.rotation.x = 0;
                     }
                 }
-                // Cleanup disconnected players
-                for (const uid in opponents) {
-                    if (!window.opponentsData[uid]) {
-                        scene.remove(opponents[uid].mesh);
-                        delete opponents[uid];
-                    }
-                }
+                // Cleanup
+                for (const uid in opponents) { if (!window.opponentsData[uid]) { scene.remove(opponents[uid].mesh); delete opponents[uid]; } }
 
-                // --- PLAYER CONTROLS ---
-                const baseSpeed = 30; // Increased from 25 to 30
-                const maxSpeed = 50; 
-                const acceleration = 0.15; // Kept as requested
-                const deceleration = 0.5;
-
-                if (keys.w) {
-                    playerMomentum = Math.min(playerMomentum + acceleration, maxSpeed);
-                } else {
-                    playerMomentum = Math.max(playerMomentum - deceleration, baseSpeed);
-                }
-                
+                // Player Controls
+                const baseSpeed = 30; const maxSpeed = 50; const acceleration = 0.15; const deceleration = 0.5;
+                if (keys.w) playerMomentum = Math.min(playerMomentum + acceleration, maxSpeed);
+                else playerMomentum = Math.max(playerMomentum - deceleration, baseSpeed);
                 const pct = ((playerMomentum - baseSpeed) / (maxSpeed - baseSpeed)) * 100;
                 document.getElementById('speed-bar').style.width = `${pct}%`;
-
                 const force = new CANNON.Vec3(0, 0, 0);
-                
-                const fwdX = Math.cos(cameraAngle);
-                const fwdZ = Math.sin(cameraAngle);
-                const rightX = -Math.sin(cameraAngle);
-                const rightZ = Math.cos(cameraAngle);
-
+                const fwdX = Math.cos(cameraAngle); const fwdZ = Math.sin(cameraAngle);
+                const rightX = -Math.sin(cameraAngle); const rightZ = Math.cos(cameraAngle);
                 if(keys.w) { force.x += fwdX * playerMomentum; force.z += fwdZ * playerMomentum; }
                 if(keys.s) { force.x -= fwdX * (playerMomentum * 0.6); force.z -= fwdZ * (playerMomentum * 0.6); }
                 if(keys.a) { force.x -= rightX * (playerMomentum * 0.8); force.z -= rightZ * (playerMomentum * 0.8); }
                 if(keys.d) { force.x += rightX * (playerMomentum * 0.8); force.z += rightZ * (playerMomentum * 0.8); }
-                
-                playerBody.velocity.x = force.x * 0.5; 
-                playerBody.velocity.z = force.z * 0.5;
-
-                if(keys.w && Math.abs(playerBody.velocity.y) > 0.5) {
-                    playerBody.velocity.x += fwdX * 0.2;
-                    playerBody.velocity.z += fwdZ * 0.2;
-                }
-
-                // Jump check using grace period (Coyote Time)
-                if(keys.space && (Date.now() - lastGroundedTime < 200)) {
-                    // Reset grace period to prevent double jumping in same frame window
-                    lastGroundedTime = 0;
-                    playerBody.velocity.y = 20;
-                }
-
-                // Respawn Logic
+                playerBody.velocity.x = force.x * 0.5; playerBody.velocity.z = force.z * 0.5;
+                if(keys.w && Math.abs(playerBody.velocity.y) > 0.5) { playerBody.velocity.x += fwdX * 0.2; playerBody.velocity.z += fwdZ * 0.2; }
+                if(keys.space && (Date.now() - lastGroundedTime < 200)) { lastGroundedTime = 0; playerBody.velocity.y = 20; }
                 if(playerBody.position.y < -30) {
                     playerBody.position.set(currentRespawnPos.x, currentRespawnPos.y, currentRespawnPos.z);
-                    playerBody.velocity.set(0, 0, 0);
-                    playerMomentum = baseSpeed;
-                    
-                    // Only say "fall" if not at checkpoint start
-                    if(checkpointActivated) updateCommentary('fall'); // Maybe different fall logic?
-                    else updateCommentary('fall');
+                    playerBody.velocity.set(0, 0, 0); playerMomentum = baseSpeed;
+                    if(checkpointActivated) updateCommentary('fall'); else updateCommentary('fall');
                 }
-
                 checkFinish();
             }
 
-            // Sync LOCAL player mesh
             if(player) {
-                player.mesh.position.copy(player.body.position);
-                player.mesh.position.y -= 0.1; 
-                
-                const vel = player.body.velocity;
-                const speed = Math.sqrt(vel.x*vel.x + vel.z*vel.z);
-
-                if(speed > 0.5) {
-                      player.mesh.rotation.y = Math.atan2(vel.x, vel.z); 
-                }
-
-                // Animation logic shared for all beans could be added here
-                // For now just animate local player limbs
-                const armL = player.mesh.getObjectByName('armL');
-                const armR = player.mesh.getObjectByName('armR');
-                const legL = player.mesh.getObjectByName('legL');
-                const legR = player.mesh.getObjectByName('legR');
-
+                player.mesh.position.copy(player.body.position); player.mesh.position.y -= 0.1; 
+                const vel = player.body.velocity; const speed = Math.sqrt(vel.x*vel.x + vel.z*vel.z);
+                if(speed > 0.5) player.mesh.rotation.y = Math.atan2(vel.x, vel.z); 
+                const armL = player.mesh.getObjectByName('armL'); const armR = player.mesh.getObjectByName('armR');
+                const legL = player.mesh.getObjectByName('legL'); const legR = player.mesh.getObjectByName('legR');
                 if(speed > 1 && player.body.position.y > -10) {
                     const runTime = Date.now() * 0.015;
-                    if(armL) armL.rotation.x = Math.sin(runTime) * 0.8;
-                    if(armR) armR.rotation.x = -Math.sin(runTime) * 0.8;
-                    if(legL) legL.rotation.x = -Math.sin(runTime) * 0.8;
-                    if(legR) legR.rotation.x = Math.sin(runTime) * 0.8;
+                    if(armL) armL.rotation.x = Math.sin(runTime) * 0.8; if(armR) armR.rotation.x = -Math.sin(runTime) * 0.8;
+                    if(legL) legL.rotation.x = -Math.sin(runTime) * 0.8; if(legR) legR.rotation.x = Math.sin(runTime) * 0.8;
                 } else {
-                    if(armL) armL.rotation.x = 0;
-                    if(armR) armR.rotation.x = 0;
-                    if(legL) legL.rotation.x = 0;
-                    if(legR) legR.rotation.x = 0;
+                    if(armL) armL.rotation.x = 0; if(armR) armR.rotation.x = 0; if(legL) legL.rotation.x = 0; if(legR) legR.rotation.x = 0;
                 }
             }
         }
 
         function checkFinish() {
             if(!hasFinished && playerBody.position.x > finishLineX) {
-                hasFinished = true;
-                window.hasFinished = true;
-                showEndScreen();
-                updateCommentary('finish');
+                hasFinished = true; window.hasFinished = true; showEndScreen(); updateCommentary('finish');
             }
-            
-            // Calculate Rank based on opponents data
-            let myX = playerBody.position.x;
-            let countAhead = 0;
-            for(const uid in window.opponentsData) {
-                if(window.opponentsData[uid].state && window.opponentsData[uid].state.x > myX) {
-                    countAhead++;
-                }
-            }
+            let myX = playerBody.position.x; let countAhead = 0;
+            for(const uid in window.opponentsData) { if(window.opponentsData[uid].x > myX) countAhead++; }
             document.getElementById('rank').innerText = `Rank: ${countAhead + 1}`;
         }
 
         function showEndScreen() {
-            gameActive = false;
-            window.gameActive = false;
-            document.exitPointerLock();
-            // This function is now exposed to window for calling
-            window.showEndScreen();
+            window.gameActive = false; document.exitPointerLock();
+            const winScreen = document.getElementById('win-screen');
+            const leaderboardDiv = document.getElementById('final-leaderboard');
+            const controlsDiv = document.getElementById('end-screen-controls');
+            leaderboardDiv.innerHTML = ''; controlsDiv.innerHTML = '';
+            let allPlayers = [];
+            if (window.playerBody) allPlayers.push({ username: myUsername + " (You)", x: window.playerBody.position.x, finished: window.hasFinished, isLocal: true });
+            for (const uid in window.opponentsData) {
+                const p = window.opponentsData[uid]; if(uid === myId) continue;
+                allPlayers.push({ username: p.username, x: p.x, finished: p.finished, isLocal: false });
+            }
+            allPlayers.sort((a, b) => { if (a.finished && !b.finished) return -1; if (!a.finished && b.finished) return 1; return b.x - a.x; });
+            allPlayers.forEach((p, index) => {
+                const row = document.createElement('div'); row.className = 'leaderboard-row';
+                row.style.color = p.isLocal ? '#ffff00' : 'white'; row.style.fontWeight = p.isLocal ? 'bold' : 'normal';
+                const status = p.finished ? '<span style="color:#44cc44">FINISHED</span>' : Math.floor(p.x) + 'm';
+                row.innerHTML = `<span>#${index+1} ${p.username}</span><span>${status}</span>`;
+                leaderboardDiv.appendChild(row);
+            });
+            const menuBtn = document.createElement('button'); menuBtn.innerText = "BACK TO MENU"; menuBtn.onclick = window.backToMenu; menuBtn.style.marginRight = "10px"; controlsDiv.appendChild(menuBtn);
+            if (isHost) {
+                const nextBtn = document.createElement('button'); nextBtn.innerText = "START NEXT LEVEL"; nextBtn.style.backgroundColor = "#00ffff"; nextBtn.style.color = "#000"; nextBtn.onclick = window.hostStartGame; controlsDiv.appendChild(nextBtn);
+            } else {
+                const waitText = document.createElement('p'); waitText.innerText = "Waiting for host to start next level..."; waitText.style.fontSize = "0.9em"; waitText.style.color = "#aaa"; waitText.style.marginTop = "10px"; controlsDiv.appendChild(waitText);
+            }
+            winScreen.style.display = 'block';
         }
 
         function animate() {
-            requestAnimationFrame(animate);
-            updatePhysics();
-            
+            requestAnimationFrame(animate); updatePhysics();
             if(playerBody) {
-                const targetPos = playerBody.position;
-                const radius = 14;
-                const camHeight = 10;
-                const camX = targetPos.x - radius * Math.cos(cameraAngle);
-                const camZ = targetPos.z - radius * Math.sin(cameraAngle);
+                const targetPos = playerBody.position; const radius = 14; const camHeight = 10;
+                const camX = targetPos.x - radius * Math.cos(cameraAngle); const camZ = targetPos.z - radius * Math.sin(cameraAngle);
                 camera.position.lerp(new THREE.Vector3(camX, targetPos.y + camHeight, camZ), 0.1);
                 camera.lookAt(targetPos.x, targetPos.y + 2, targetPos.z);
             }
-            
-            // Sync Skybox to Camera
-            if (backgroundObjects.length > 0) {
-                backgroundObjects[0].position.copy(camera.position);
-            }
-
+            if (backgroundObjects.length > 0) backgroundObjects[0].position.copy(camera.position);
             renderer.render(scene, camera);
         }
 
-        window.addEventListener('load', () => {
-            init();
-        });
+        window.addEventListener('load', () => { init(); });
     </script>
 </body>
 </html>
