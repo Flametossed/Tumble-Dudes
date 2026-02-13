@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tumble Dudes</title>
+    <title>Tumble Dudes - Test Branch</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
     <!-- PeerJS for P2P Networking (Replaces Firebase) -->
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #222; }
@@ -71,6 +71,12 @@
         }
         #player-list li {
             padding: 10px; border-bottom: 1px solid #444; font-size: 1.1em;
+            display: flex; align-items: center; gap: 10px;
+        }
+        
+        .player-color-dot {
+            width: 12px; height: 12px; border-radius: 50%;
+            display: inline-block; border: 2px solid white;
         }
 
         #code-display {
@@ -84,7 +90,7 @@
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #111; z-index: 200; color: #ff00ff;
             display: none; align-items: center; justify-content: center;
-            font-size: 1.5em;
+            font-size: 1.5em; flex-direction: column; gap: 20px;
         }
 
         /* Game UI */
@@ -120,6 +126,94 @@
             display: flex;
             align-items: center;
             gap: 10px;
+        }
+        
+        /* Ping indicator */
+        #ping-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.6);
+            padding: 8px 12px;
+            border-radius: 6px;
+            color: white;
+            font-size: 0.9em;
+            display: none;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .ping-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        .ping-good { background: #44cc44; }
+        .ping-medium { background: #ffaa00; }
+        .ping-bad { background: #ff4444; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        
+        /* Disconnect notification */
+        #notification-area {
+            position: fixed;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 150;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+        
+        .notification {
+            background: rgba(255, 68, 68, 0.9);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            animation: slideIn 0.3s, slideOut 0.3s 2.7s;
+            min-width: 250px;
+            text-align: center;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateY(-20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        @keyframes slideOut {
+            from { transform: translateY(0); opacity: 1; }
+            to { transform: translateY(-20px); opacity: 0; }
+        }
+        
+        /* Countdown overlay */
+        #countdown-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 110;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 8em;
+            font-weight: bold;
+            text-shadow: 0 0 20px #ff00ff;
+        }
+        
+        #countdown-overlay.go {
+            color: #44cc44;
+            text-shadow: 0 0 20px #44cc44;
         }
         
         #win-screen {
@@ -169,10 +263,46 @@
             background: rgba(0,0,0,0.5); padding: 5px 10px; font-size: 0.8rem;
             pointer-events: auto !important; color: white; border: 1px solid white; border-radius: 4px;
         }
+        
+        /* Improved invite button */
+        #invite-btn {
+            background: linear-gradient(135deg, #00ffff, #0088ff) !important;
+            border: none !important;
+            color: white !important;
+            padding: 10px 20px !important;
+            margin: 15px 0 !important;
+            font-size: 1em !important;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0, 255, 255, 0.3);
+            animation: glow 2s infinite;
+        }
+        
+        #invite-btn:hover {
+            transform: scale(1.05) !important;
+            box-shadow: 0 6px 20px rgba(0, 255, 255, 0.5) !important;
+        }
+        
+        @keyframes glow {
+            0%, 100% { box-shadow: 0 4px 15px rgba(0, 255, 255, 0.3); }
+            50% { box-shadow: 0 4px 25px rgba(0, 255, 255, 0.6); }
+        }
+        
+        #waiting-message {
+            font-size: 1.1em;
+            color: #ffaa00;
+            margin: 15px 0;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
-    <div id="loading-overlay">Connecting to Cloud...</div>
+    <div id="loading-overlay">
+        <div>Connecting to Cloud...</div>
+        <div style="font-size: 0.5em; color: #888;">Test Branch v7.2</div>
+    </div>
+    
+    <div id="notification-area"></div>
+    <div id="countdown-overlay"></div>
 
     <!-- Lobby UI -->
     <div id="lobby-ui">
@@ -188,19 +318,23 @@
             <div style="margin: 15px 0; color: #aaa;">- OR -</div>
             <input type="text" id="code-input" placeholder="ENTER HOST CODE">
             <button class="btn-primary" onclick="joinLobby()">JOIN GAME</button>
-            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">v6.4 (Animation Fix)</div>
+            <div style="margin-top: 20px; font-size: 0.75em; color: #888; max-width: 300px; line-height: 1.4;">
+                🛡️ If connection fails: Disable browser tracking protection or try Incognito mode
+            </div>
+            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">TEST BRANCH v7.2 (Sound Fix)</div>
         </div>
 
         <!-- Wait Room -->
         <div id="wait-room" class="panel" style="display: none;">
             <h3 style="margin: 0; color: #ff00ff;">LOBBY CODE</h3>
             <div id="code-display"><span id="lobby-code-display">??????</span></div>
-            <button id="invite-btn" class="btn-secondary" style="margin-top: 0; margin-bottom: 10px; padding: 5px 10px; font-size: 0.9em;" onclick="copyInviteLink()">🔗 COPY INVITE LINK</button>
+            <button id="invite-btn" class="btn-secondary" onclick="copyInviteLink()">🔗 SHARE INVITE LINK</button>
+            <div id="waiting-message" style="display: none;">⏳ Waiting for other players to join...</div>
             <div id="player-count">1 / 6 Players</div>
             <ul id="player-list">
                 <!-- Players go here -->
             </ul>
-            <button id="start-btn" class="btn-primary" onclick="hostStartGame()">START RACE (ANYTIME)</button>
+            <button id="start-btn" class="btn-primary" onclick="hostStartGame()">START RACE</button>
             <p id="wait-text" style="font-size: 0.8em; color: #aaa; margin-top: 10px;">Waiting for host...</p>
             <button class="btn-secondary" onclick="backToMenu()">Cancel</button>
         </div>
@@ -218,6 +352,11 @@
             <span id="commentary-text">waiting for sportscaster...</span>
         </div>
     </div>
+    
+    <div id="ping-indicator">
+        <div class="ping-dot ping-good"></div>
+        <span id="ping-text">-- ms</span>
+    </div>
 
     <button class="mute-btn" onclick="toggleMusic()">🎵 Toggle Music</button>
 
@@ -232,24 +371,43 @@
     </div>
 
     <script>
+        // --- PLAYER COLORS ---
+        const PLAYER_COLORS = [
+            0x00ff00, // Green
+            0xff0000, // Red
+            0x0088ff, // Blue
+            0xffff00, // Yellow
+            0xff00ff, // Magenta
+            0x00ffff  // Cyan
+        ];
+        
+        const PLAYER_COLOR_NAMES = [
+            "Green", "Red", "Blue", "Yellow", "Magenta", "Cyan"
+        ];
+        
         // --- PEERJS CONFIG ---
-        // PeerJS allows direct browser-to-browser connection. No Firebase quotas.
         let peer = null;
-        let connections = []; // For Host: Array of DataConnection
-        let hostConn = null;  // For Client: Connection to Host
+        let connections = [];
+        let hostConn = null;
         
         let myId = null;
         let myUsername = "Bean";
+        let myColorIndex = 0;
         let isHost = false;
         
+        // Ping tracking
+        let lastPingTime = 0;
+        let currentPing = 0;
+        let pingHistory = [];
+        
         // Game State Sync
-        window.opponentsData = {}; // { peerId: { username, x, y, z, rot, finished } }
+        window.opponentsData = {};
         let myState = { x: 0, y: 0, z: 0, rot: 0, finished: false };
 
         // --- GAME VARS ---
         let scene, camera, renderer, world;
         let player, playerBody, playerMesh; 
-        let opponents = {}; // Visual Meshes
+        let opponents = {};
         let obstacles = [];
         let gameActive = false;
         let finishLineX = 0;
@@ -274,23 +432,106 @@
         let isPlayingMusic = false;
         let currentTrack = null;
         const keys = { w: false, a: false, s: false, d: false, space: false };
+        
+        // Countdown state
+        let isCountingDown = false;
+        
+        // Sound effect cooldowns
+        let lastCollisionSound = 0;
+
+        // --- COMMENTARY PHRASES ---
+        const COMMENTARY = {
+            start: [
+                "And they're off!",
+                "Let the tumbling begin!",
+                "It's race time, folks!",
+                "Who will reach the finish first?"
+            ],
+            checkpoint: [
+                "Checkpoint secured!",
+                "Halfway there!",
+                "What a recovery!",
+                "Crushing it so far!"
+            ],
+            fall: [
+                "Ouch! That's gonna hurt!",
+                "Down they go!",
+                "Back to the checkpoint!",
+                "That looked painful!"
+            ],
+            finish: [
+                "They've crossed the line!",
+                "What an incredible run!",
+                "Ladies and gentlemen, we have a finisher!",
+                "That's how it's done!"
+            ]
+        };
+
+        // --- SOUND EFFECTS ---
+        function playSoundEffect(type) {
+            if (!audioCtx || isMuted) return;
+            
+            switch(type) {
+                case 'jump':
+                    playTone(400, 0.1, 'sine', 0.15);
+                    setTimeout(() => playTone(600, 0.08, 'sine', 0.1), 50);
+                    break;
+                case 'collision':
+                    playTone(100, 0.2, 'sawtooth', 0.2);
+                    break;
+                case 'finish':
+                    playTone(523, 0.15, 'sine', 0.2);
+                    setTimeout(() => playTone(659, 0.15, 'sine', 0.2), 150);
+                    setTimeout(() => playTone(784, 0.3, 'sine', 0.2), 300);
+                    break;
+                case 'countdown':
+                    playTone(800, 0.1, 'square', 0.15);
+                    break;
+                case 'go':
+                    playTone(1000, 0.2, 'sine', 0.2);
+                    setTimeout(() => playTone(1200, 0.3, 'sine', 0.2), 100);
+                    break;
+            }
+        }
+
+        // --- NOTIFICATION SYSTEM ---
+        function showNotification(message, duration = 3000) {
+            const notifArea = document.getElementById('notification-area');
+            const notif = document.createElement('div');
+            notif.className = 'notification';
+            notif.textContent = message;
+            notifArea.appendChild(notif);
+            
+            setTimeout(() => {
+                notif.remove();
+            }, duration);
+        }
 
         // --- NETWORK FUNCTIONS ---
 
         function createLobby() {
+            if (typeof Peer === 'undefined') {
+                alert('PeerJS library not loaded yet. Please wait a moment and try again.');
+                return;
+            }
+            
             const username = document.getElementById('username-input').value || "Host Dude";
             myUsername = username;
             isHost = true;
+            myColorIndex = 0; // Host is always first color
             
-            // Random 4-digit code
             const code = Math.floor(1000 + Math.random() * 9000).toString();
-            // Prefix to make unique on public server
             const peerId = "tumble-" + code;
 
             initPeer(peerId, code);
         }
 
         function joinLobby() {
+            if (typeof Peer === 'undefined') {
+                alert('PeerJS library not loaded yet. Please wait a moment and try again.');
+                return;
+            }
+            
             const username = document.getElementById('username-input').value || "Guest Dude";
             myUsername = username;
             isHost = false;
@@ -298,7 +539,6 @@
             const code = document.getElementById('code-input').value;
             if(!code) { alert("Enter code!"); return; }
             
-            // Client doesn't need specific ID, let server assign
             initPeer(null, code);
         }
 
@@ -306,20 +546,17 @@
             const code = document.getElementById('lobby-code-display').innerText;
             if(!code || code === "??????") return;
             
-            // Generate clean URL without existing query params
             const baseUrl = window.location.href.split('?')[0];
             const url = baseUrl + '?code=' + code;
             
             navigator.clipboard.writeText(url).then(() => {
                 const btn = document.getElementById('invite-btn');
                 const orig = btn.innerText;
-                btn.innerText = "LINK COPIED! ✅";
-                btn.style.color = "#44cc44";
-                btn.style.borderColor = "#44cc44";
+                btn.innerText = "✅ LINK COPIED!";
+                btn.style.background = "linear-gradient(135deg, #44cc44, #228822)";
                 setTimeout(() => {
                     btn.innerText = orig;
-                    btn.style.color = "";
-                    btn.style.borderColor = "";
+                    btn.style.background = "";
                 }, 2000);
             }).catch(err => {
                 console.error('Failed to copy: ', err);
@@ -330,93 +567,198 @@
         function initPeer(customId, lobbyCode) {
             document.getElementById('loading-overlay').style.display = 'flex';
             
-            // Using public PeerJS server (Free, no reliability guarantee, but usually fine)
-            // Or host your own simple peer server on Render/Heroku if this gets busy
+            // Set a timeout to detect hung connections
+            const connectionTimeout = setTimeout(() => {
+                if(peer && !peer.id) {
+                    document.getElementById('loading-overlay').style.display = 'none';
+                    alert(`Connection timeout!\n\nThis usually means your browser is blocking the connection.\n\n` +
+                          `Try:\n` +
+                          `1. Disable tracking protection/shields for this site\n` +
+                          `2. Open in Incognito/Private window\n` +
+                          `3. Try a different browser (Chrome, Edge, Safari)`);
+                    if(peer) peer.destroy();
+                    peer = null;
+                    backToMenu();
+                }
+            }, 15000); // 15 second timeout
+            
+            // Explicit configuration for better compatibility
             peer = new Peer(customId, {
-                debug: 2
+                host: '0.peerjs.com',
+                secure: true,
+                port: 443,
+                path: '/',
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
+                },
+                debug: 1
             });
 
             peer.on('open', (id) => {
+                clearTimeout(connectionTimeout); // Connection successful
                 myId = id;
                 document.getElementById('loading-overlay').style.display = 'none';
                 
                 if(isHost) {
                     enterLobbyUI(lobbyCode);
-                    // Add self to opponentsData for local display
-                    window.opponentsData[myId] = { username: myUsername, isHost: true };
+                    window.opponentsData[myId] = { 
+                        username: myUsername, 
+                        isHost: true,
+                        colorIndex: myColorIndex
+                    };
                     updateLobbyList();
+                    startPingLoop();
                 } else {
-                    // Connect to Host
                     const hostId = "tumble-" + lobbyCode;
                     hostConn = peer.connect(hostId);
                     
                     hostConn.on('open', () => {
                         console.log("Connected to Host!");
-                        // Send handshake
                         hostConn.send({ type: 'join', username: myUsername });
                         enterLobbyUI(lobbyCode);
+                        startPingLoop();
                     });
 
                     hostConn.on('data', handleDataFromHost);
-                    hostConn.on('close', () => { alert("Host disconnected!"); backToMenu(); });
-                    hostConn.on('error', (err) => { alert("Connection Error: " + err); backToMenu(); });
+                    hostConn.on('close', () => { 
+                        showNotification("Host disconnected!");
+                        setTimeout(() => backToMenu(), 2000);
+                    });
+                    hostConn.on('error', (err) => { 
+                        alert("Connection Error: " + err); 
+                        backToMenu(); 
+                    });
                 }
             });
 
             peer.on('connection', (conn) => {
-                // Only Host receives connections
                 if(!isHost) return;
 
                 conn.on('open', () => {
                     connections.push(conn);
-                    // Send current players to new guy
                     conn.send({ type: 'state_update', players: window.opponentsData });
                 });
 
                 conn.on('data', (data) => handleDataFromClient(data, conn.peer));
                 
                 conn.on('close', () => {
-                    // Remove player
+                    const disconnectedPlayer = window.opponentsData[conn.peer];
+                    if(disconnectedPlayer) {
+                        showNotification(`${disconnectedPlayer.username} disconnected`);
+                    }
                     delete window.opponentsData[conn.peer];
                     connections = connections.filter(c => c.peer !== conn.peer);
                     updateLobbyList();
-                    broadcastState(); // Tell everyone they left
+                    broadcastState();
                 });
             });
 
             peer.on('error', (err) => {
+                clearTimeout(connectionTimeout); // Clear timeout
                 document.getElementById('loading-overlay').style.display = 'none';
+                console.error('Peer error:', err);
+                
+                let errorMsg = "Network Error: ";
+                
                 if(err.type === 'unavailable-id') {
-                    alert("Lobby Code already taken. Try again.");
+                    errorMsg = "Lobby Code already taken. Try again.";
+                } else if(err.type === 'network' || err.message?.includes('NS_ERROR_CONTENT_BLOCKED')) {
+                    errorMsg = `Connection blocked by browser!\n\n` +
+                              `Firefox users: Disable Enhanced Tracking Protection for this site:\n` +
+                              `1. Click the shield icon in the address bar\n` +
+                              `2. Turn off "Enhanced Tracking Protection"\n` +
+                              `3. Refresh the page\n\n` +
+                              `Chrome users: Check if any extensions are blocking connections.\n\n` +
+                              `Alternative: Try opening in an Incognito/Private window.`;
+                } else if(err.type === 'peer-unavailable') {
+                    errorMsg = "Could not find that lobby code. Check the code and try again.";
+                } else if(err.type === 'server-error') {
+                    errorMsg = "PeerJS server is unavailable. Please try again in a moment.";
                 } else {
-                    alert("Network Error: " + err.type);
+                    errorMsg += err.type || err.message || "Unknown error";
                 }
+                
+                alert(errorMsg);
                 backToMenu();
             });
+        }
+
+        // --- PING SYSTEM ---
+        function startPingLoop() {
+            setInterval(() => {
+                if(!gameActive) return;
+                
+                lastPingTime = Date.now();
+                
+                if(isHost) {
+                    connections.forEach(c => {
+                        c.send({ type: 'ping', timestamp: Date.now() });
+                    });
+                } else if(hostConn && hostConn.open) {
+                    hostConn.send({ type: 'pong', timestamp: Date.now() });
+                }
+            }, 2000);
+        }
+        
+        function updatePingDisplay() {
+            if(!gameActive) return;
+            
+            const pingIndicator = document.getElementById('ping-indicator');
+            const pingText = document.getElementById('ping-text');
+            const pingDot = pingIndicator.querySelector('.ping-dot');
+            
+            pingIndicator.style.display = 'flex';
+            pingText.textContent = `${currentPing} ms`;
+            
+            // Update color based on ping
+            pingDot.className = 'ping-dot';
+            if(currentPing < 100) {
+                pingDot.classList.add('ping-good');
+            } else if(currentPing < 200) {
+                pingDot.classList.add('ping-medium');
+            } else {
+                pingDot.classList.add('ping-bad');
+            }
         }
 
         // --- HOST LOGIC ---
         function handleDataFromClient(data, clientId) {
             if(data.type === 'join') {
-                if(Object.keys(window.opponentsData).length >= 6) return; // Full
+                if(Object.keys(window.opponentsData).length >= 6) return;
+                
+                // Assign next available color
+                const usedColors = Object.values(window.opponentsData).map(p => p.colorIndex);
+                let colorIndex = 0;
+                for(let i = 0; i < PLAYER_COLORS.length; i++) {
+                    if(!usedColors.includes(i)) {
+                        colorIndex = i;
+                        break;
+                    }
+                }
+                
                 window.opponentsData[clientId] = { 
                     username: data.username, 
                     isHost: false,
-                    // Init physics state
+                    colorIndex: colorIndex,
                     x: -5, y: 5, z: 0, rot: 0, finished: false
                 };
                 updateLobbyList();
-                broadcastState(); // Sync everyone
+                broadcastState();
             } else if (data.type === 'pos') {
-                // Update player position in source of truth
                 if(window.opponentsData[clientId]) {
                     Object.assign(window.opponentsData[clientId], data.state);
                 }
+            } else if (data.type === 'pong') {
+                // Client responded to ping
+                const rtt = Date.now() - data.timestamp;
+                // Could track per-client ping if needed
             }
         }
 
         function broadcastState() {
-            // Send full player list to everyone
             const msg = { type: 'state_update', players: window.opponentsData };
             connections.forEach(c => c.send(msg));
         }
@@ -424,13 +766,30 @@
         // --- CLIENT LOGIC ---
         function handleDataFromHost(data) {
             if (data.type === 'state_update') {
-                // Update local copy of everyone else
                 window.opponentsData = data.players;
-                updateLobbyList(); // Refresh UI if in lobby
+                
+                // Set our color from host assignment
+                if(window.opponentsData[myId]) {
+                    myColorIndex = window.opponentsData[myId].colorIndex;
+                }
+                
+                updateLobbyList();
             } else if (data.type === 'start_game') {
-                window.startMultiplayerGame(data.level);
-                document.getElementById('ui').style.display = 'block'; 
-                document.getElementById('lobby-ui').style.display = 'none';
+                startCountdown(data.level);
+            } else if (data.type === 'ping') {
+                // Respond to host ping
+                const rtt = Date.now() - data.timestamp;
+                currentPing = rtt;
+                pingHistory.push(rtt);
+                if(pingHistory.length > 5) pingHistory.shift();
+                
+                // Calculate average
+                currentPing = Math.round(pingHistory.reduce((a,b) => a+b, 0) / pingHistory.length);
+                updatePingDisplay();
+                
+                if(hostConn && hostConn.open) {
+                    hostConn.send({ type: 'pong', timestamp: data.timestamp });
+                }
             }
         }
 
@@ -454,28 +813,93 @@
 
         function updateLobbyList() {
             const list = document.getElementById('player-list');
+            const waitingMsg = document.getElementById('waiting-message');
+            
             list.innerHTML = '';
             let count = 0;
+            
             for(const pid in window.opponentsData) {
                 const p = window.opponentsData[pid];
                 const li = document.createElement('li');
-                li.innerText = `${p.username} ${p.isHost ? '👑' : ''}`;
+                
+                const colorDot = document.createElement('span');
+                colorDot.className = 'player-color-dot';
+                colorDot.style.backgroundColor = `#${PLAYER_COLORS[p.colorIndex].toString(16).padStart(6, '0')}`;
+                
+                li.appendChild(colorDot);
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.innerText = `${p.username} ${p.isHost ? '👑' : ''}`;
+                li.appendChild(nameSpan);
+                
                 list.appendChild(li);
                 count++;
             }
+            
             document.getElementById('player-count').innerText = `${count} / 6 Players`;
+            
+            // Show waiting message if solo
+            if(isHost && count === 1) {
+                waitingMsg.style.display = 'block';
+            } else {
+                waitingMsg.style.display = 'none';
+            }
+        }
+
+        // --- COUNTDOWN SYSTEM ---
+        function startCountdown(level) {
+            if(isCountingDown) return;
+            isCountingDown = true;
+            
+            // Prepare game but don't start yet
+            document.getElementById('lobby-ui').style.display = 'none';
+            document.getElementById('ui').style.display = 'block';
+            
+            window.startMultiplayerGame(level, false); // false = don't activate yet
+            
+            const overlay = document.getElementById('countdown-overlay');
+            overlay.style.display = 'flex';
+            
+            let count = 3;
+            overlay.textContent = count;
+            overlay.classList.remove('go');
+            playSoundEffect('countdown');
+            
+            const countInterval = setInterval(() => {
+                count--;
+                if(count > 0) {
+                    overlay.textContent = count;
+                    playSoundEffect('countdown');
+                } else {
+                    overlay.textContent = 'GO!';
+                    overlay.classList.add('go');
+                    playSoundEffect('go');
+                    
+                    // Activate game
+                    window.gameActive = true;
+                    gameActive = true;
+                    
+                    setTimeout(() => {
+                        overlay.style.display = 'none';
+                        isCountingDown = false;
+                    }, 1000);
+                    
+                    clearInterval(countInterval);
+                }
+            }, 1000);
         }
 
         window.hostStartGame = function() {
-            if(!isHost) return;
+            if(!isHost || isCountingDown) return;
+            
             const level = window.generateRandomLevelStructure(); 
-            // Broadcast Start
+            
+            // Broadcast Start with countdown
             const msg = { type: 'start_game', level: level };
             connections.forEach(c => c.send(msg));
-            // Start Local
-            window.startMultiplayerGame(level);
-            document.getElementById('ui').style.display = 'block'; 
-            document.getElementById('lobby-ui').style.display = 'none';
+            
+            // Start Local countdown
+            startCountdown(level);
         }
 
         window.backToMenu = function() {
@@ -485,26 +909,25 @@
             hostConn = null;
             window.opponentsData = {};
             
-            // UI Reset
             document.getElementById('win-screen').style.display = 'none';
             document.getElementById('ui').style.display = 'none';
+            document.getElementById('ping-indicator').style.display = 'none';
             document.getElementById('lobby-ui').style.display = 'flex';
             document.getElementById('main-menu').style.display = 'flex';
             document.getElementById('wait-room').style.display = 'none';
             document.getElementById('loading-overlay').style.display = 'none';
             
             window.gameActive = false;
+            gameActive = false;
+            isCountingDown = false;
             window.clearLevel();
             window.changeMusicTrack();
         }
 
         // --- NETWORK LOOP ---
-        // Host broadcasts state ~20 times/sec
-        // Client sends state ~20 times/sec
         setInterval(() => {
             if(!window.gameActive || !myId) return;
             
-            // 1. Prepare my data
             if(window.playerBody) {
                 myState = {
                     x: parseFloat(window.playerBody.position.x.toFixed(2)),
@@ -516,15 +939,12 @@
             }
 
             if(isHost) {
-                // Host updates their own record in the truth source
                 if(window.opponentsData[myId]) Object.assign(window.opponentsData[myId], myState);
-                // Broadcast Truth
                 broadcastState();
             } else if (hostConn && hostConn.open) {
-                // Client sends pos to host
                 hostConn.send({ type: 'pos', state: myState });
             }
-        }, 50); // 50ms = 20 ticks/sec
+        }, 50);
 
         // --- EXPOSE GLOBALS ---
         window.createLobby = createLobby;
@@ -533,20 +953,43 @@
         window.copyInviteLink = copyInviteLink;
         window.backToMenu = backToMenu;
 
+        // --- LIBRARY LOADING CHECK ---
+        function waitForLibraries() {
+            return new Promise((resolve) => {
+                const statusDiv = document.getElementById('auth-status');
+                statusDiv.innerText = 'Loading libraries...';
+                statusDiv.style.color = '#ffaa00';
+                
+                const checkLibraries = () => {
+                    if (typeof THREE !== 'undefined' && 
+                        typeof CANNON !== 'undefined' && 
+                        typeof Peer !== 'undefined') {
+                        statusDiv.innerText = 'Ready to Connect ✓';
+                        statusDiv.style.color = '#44cc44';
+                        resolve();
+                    } else {
+                        console.log('Waiting for libraries...', {
+                            THREE: typeof THREE !== 'undefined',
+                            CANNON: typeof CANNON !== 'undefined',
+                            Peer: typeof Peer !== 'undefined'
+                        });
+                        setTimeout(checkLibraries, 100);
+                    }
+                };
+                checkLibraries();
+            });
+        }
+
         // --- GAME INIT ---
-        function init() {
-            // Check for invite code
+        async function init() {
+            // Wait for all libraries to load
+            await waitForLibraries();
+            
             const urlParams = new URLSearchParams(window.location.search);
             const code = urlParams.get('code');
             if(code) {
                 document.getElementById('code-input').value = code;
-                // Optional: Highlight JOIN button or focus username
                 document.getElementById('username-input').focus();
-            }
-
-            if (typeof THREE === 'undefined' || typeof CANNON === 'undefined') {
-                console.error("Libraries not loaded.");
-                return;
             }
 
             scene = new THREE.Scene();
@@ -599,7 +1042,7 @@
 
             document.addEventListener('click', () => {
                 if (!audioCtx) initAudio();
-                if (window.gameActive && !isPointerLocked) {
+                if (window.gameActive && !isPointerLocked && !isCountingDown) {
                     document.body.requestPointerLock();
                 }
             });
@@ -617,22 +1060,27 @@
             animate();
         }
 
-        window.startMultiplayerGame = function(levelSegments) {
+        window.startMultiplayerGame = function(levelSegments, activate = true) {
             document.getElementById('win-screen').style.display = 'none';
             clearLevel();
             createBackgroundScenery(); 
             buildLevelFromSegments(levelSegments);
             createPlayer();
             
-            window.gameActive = true; // Immediate start
-            gameActive = true;
+            if(activate) {
+                window.gameActive = true;
+                gameActive = true;
+            }
+            
             window.hasFinished = false;
             hasFinished = false;
             
             if (!audioCtx) initAudio();
             window.changeMusicTrack(); 
             
-            updateCommentary('start');
+            if(activate) {
+                updateCommentary('start');
+            }
         }
 
         // --- Audio System ---
@@ -690,34 +1138,29 @@
             loop();
         }
 
-        async function playPCM(base64Data) {
-            // Simplified: No key = no speech. Use Web Speech API if you want free speech later.
-        }
-
         // --- Visuals & Level ---
 
         function generateSkyboxTexture(theme) {
             const canvas = document.createElement('canvas');
-            // REDUCED RESOLUTION TO PREVENT BLACK SCREEN
             canvas.width = 1024; canvas.height = 512;
             const ctx = canvas.getContext('2d');
             const w = canvas.width; const h = canvas.height;
 
-            if (theme === 0) { // Neon Space
+            if (theme === 0) {
                 const grad = ctx.createLinearGradient(0, 0, 0, h);
                 grad.addColorStop(0, '#000000'); grad.addColorStop(1, '#220033');
                 ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
                 ctx.fillStyle = '#ffffff';
                 for(let i=0; i<400; i++) { ctx.beginPath(); ctx.arc(Math.random()*w, Math.random()*h, Math.random()*1.5, 0, Math.PI*2); ctx.fill(); }
-            } else if (theme === 1) { // Sunny Day
+            } else if (theme === 1) {
                 const grad = ctx.createLinearGradient(0, 0, 0, h);
                 grad.addColorStop(0, '#00BFFF'); grad.addColorStop(1, '#FFFFFF');
                 ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
-            } else if (theme === 2) { // Sunset
+            } else if (theme === 2) {
                 const grad = ctx.createLinearGradient(0, 0, 0, h);
                 grad.addColorStop(0, '#4B0082'); grad.addColorStop(0.5, '#FF4500'); grad.addColorStop(1, '#FFD700');
                 ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
-            } else { // Cyber
+            } else {
                 const grad = ctx.createLinearGradient(0, 0, 0, h);
                 grad.addColorStop(0, '#000000'); grad.addColorStop(1, '#001133');
                 ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
@@ -732,7 +1175,6 @@
             backgroundObjects = [];
             const theme = Math.floor(Math.random() * 4);
             
-            // FALLBACK BACKGROUND COLOR TO PREVENT BLACK SCREEN
             if (theme === 0) scene.background = new THREE.Color(0x110022);
             else if (theme === 1) scene.background = new THREE.Color(0x87CEFA);
             else if (theme === 2) scene.background = new THREE.Color(0x4B0082);
@@ -768,15 +1210,22 @@
             const now = Date.now();
             if(now - lastCommentaryTime < 8000 && eventType !== 'checkpoint') return;
             lastCommentaryTime = now;
+            
             const boxText = document.getElementById('commentary-text');
-            boxText.innerText = `🎙️ "${eventType.toUpperCase()}"`;
+            const phrases = COMMENTARY[eventType] || [`${eventType}!`];
+            const randomPhrase = phrases[Math.floor(Math.random() * phrases.length)];
+            
+            boxText.innerText = randomPhrase;
             document.getElementById('commentary-box').style.opacity = 1;
+            
+            setTimeout(() => {
+                document.getElementById('commentary-box').style.opacity = 0;
+            }, 5000);
         }
 
         // --- Level System ---
         let levelObjects = [];
         let currentPos = { x: -5, y: -0.5, z: 0 };
-        let levelMinY = -0.5;
 
         function createBox(w, h, d, x, y, z, color, mass=0, rotX=0, rotY=0, rotZ=0) {
             const geo = new THREE.BoxGeometry(w, h, d);
@@ -798,7 +1247,7 @@
 
         window.clearLevel = function() {
             levelObjects.forEach(obj => { scene.remove(obj.mesh); world.removeBody(obj.body); });
-            levelObjects = []; obstacles = []; currentPos = { x: -5, y: -0.5, z: 0 }; levelMinY = -0.5;
+            levelObjects = []; obstacles = []; currentPos = { x: -5, y: -0.5, z: 0 };
             currentRespawnPos = { x: -5, y: 5, z: 0 }; checkpointPos = null; checkpointActivated = false; window.checkpointFlagMat = null;
             if(player) { scene.remove(player.mesh); world.removeBody(player.body); player = null; window.playerBody = null; window.playerMesh = null; }
             for(let uid in opponents) { scene.remove(opponents[uid].mesh); }
@@ -820,7 +1269,6 @@
 
         function buildLevelFromSegments(segments) {
             currentPos = { x: -5, y: -0.5, z: 0 };
-            levelMinY = -0.5;
             const midIndex = Math.floor(segments.length / 2);
             segments.forEach((seg, index) => {
                 const baseColor = index % 2 === 0 ? 0xdddddd : 0xcccccc;
@@ -844,7 +1292,6 @@
                     case 'split_ramp_tunnel': { const riseH = 8; const angleH = Math.atan2(riseH, 20); const hypH = Math.sqrt(20*20 + riseH*riseH); createBox(hypH, 1, 8, currentPos.x + 10, currentPos.y + riseH/2, currentPos.z - 8, 0xff00ff, 0, 0, 0, angleH); createBox(10, 1, 8, currentPos.x + 25, currentPos.y + riseH, currentPos.z - 8, 0xff00ff); createBox(hypH, 1, 8, currentPos.x + 40, currentPos.y + riseH/2, currentPos.z - 8, 0xff00ff, 0, 0, 0, -angleH); createBox(50, 1, 8, currentPos.x + 25, currentPos.y, currentPos.z + 8, baseColor); createBox(50, 1, 8, currentPos.x + 25, currentPos.y + 5, currentPos.z + 8, 0x555555); currentPos.x += 50; break; }
                     case 'finish': { finishLineX = currentPos.x; createBox(20, 1, 20, currentPos.x + 10, currentPos.y, currentPos.z, 0xffd700); const arch = createBox(2, 8, 10, currentPos.x, currentPos.y + 4.5, currentPos.z, 0xffd700); arch.mesh.material.transparent = true; arch.mesh.material.opacity = 0.5; arch.body.collisionFilterGroup = 0; break; }
                 }
-                if(currentPos.y < levelMinY) levelMinY = currentPos.y;
             });
         }
 
@@ -883,11 +1330,20 @@
         }
 
         function createPlayer() {
-            const mesh = createHumanoid(0x00ff00); scene.add(mesh); playerMesh = mesh; window.playerMesh = mesh;
-            const shape = new CANNON.Sphere(0.6); playerBody = new CANNON.Body({ mass: 1, fixedRotation: true, material: world.defaultMaterial });
-            playerBody.addShape(shape); playerBody.position.set(-5, 2, 0); // Spawn lowered to 2 to prevent high bounce
-            playerBody.linearDamping = 0.0; world.addBody(playerBody);
-            player = { mesh, body: playerBody, isPlayer: true }; window.playerBody = playerBody;
+            const mesh = createHumanoid(PLAYER_COLORS[myColorIndex]); 
+            scene.add(mesh); 
+            playerMesh = mesh; 
+            window.playerMesh = mesh;
+            
+            const shape = new CANNON.Sphere(0.6); 
+            playerBody = new CANNON.Body({ mass: 1, fixedRotation: true, material: world.defaultMaterial });
+            playerBody.addShape(shape); 
+            playerBody.position.set(-5, 2, 0);
+            playerBody.linearDamping = 0.0; 
+            world.addBody(playerBody);
+            
+            player = { mesh, body: playerBody, isPlayer: true }; 
+            window.playerBody = playerBody;
         }
 
         function updatePhysics() {
@@ -896,11 +1352,27 @@
             for(let i = 0; i < world.contacts.length; i++) {
                 const c = world.contacts[i];
                 if(c.bi === playerBody || c.bj === playerBody) {
-                    if(c.bi === playerBody) { if(c.ni.y < -0.5) isGrounded = true; } 
-                    else { if(c.ni.y > 0.5) isGrounded = true; }
+                    if(c.bi === playerBody) { 
+                        if(c.ni.y < -0.5) isGrounded = true; 
+                    } else { 
+                        if(c.ni.y > 0.5) isGrounded = true; 
+                    }
+                    
+                    // Collision sound effect (with cooldown to prevent buzzing)
+                    if(gameActive) {
+                        const now = Date.now();
+                        const relVel = c.bi === playerBody ? 
+                            c.bi.velocity.length() : c.bj.velocity.length();
+                        // Only play on significant impacts (not normal running), with cooldown
+                        if(relVel > 25 && now - lastCollisionSound > 500) {
+                            playSoundEffect('collision');
+                            lastCollisionSound = now;
+                        }
+                    }
                 }
             }
             if (isGrounded) lastGroundedTime = Date.now();
+            
             const time = Date.now() * 0.001;
             obstacles.forEach(obs => {
                 if(obs.type === 'spinner') obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), time * obs.speed);
@@ -908,23 +1380,23 @@
                 obs.mesh.position.copy(obs.body.position); obs.mesh.quaternion.copy(obs.body.quaternion);
             });
 
-            if(gameActive || !gameActive) { // Run respawn check ALWAYS (fixes black screen glitch on load)
-                if(playerBody && playerBody.position.y < levelMinY - 30) {
-                    playerBody.position.set(currentRespawnPos.x, currentRespawnPos.y, currentRespawnPos.z);
-                    playerBody.velocity.set(0, 0, 0); 
-                    if(gameActive) {
-                        playerMomentum = 30; // Reset momentum
-                        if(checkpointActivated) updateCommentary('fall'); else updateCommentary('fall');
-                    }
+            if(playerBody && playerBody.position.y < -30) {
+                playerBody.position.set(currentRespawnPos.x, currentRespawnPos.y, currentRespawnPos.z);
+                playerBody.velocity.set(0, 0, 0); 
+                if(gameActive) {
+                    playerMomentum = 30;
+                    updateCommentary('fall');
                 }
             }
 
             if(gameActive) {
                 // Checkpoint
                 if(checkpointPos && !checkpointActivated && playerBody.position.x > checkpointPos.x) {
-                    checkpointActivated = true; currentRespawnPos = { x: checkpointPos.x, y: checkpointPos.y + 10, z: checkpointPos.z };
+                    checkpointActivated = true; 
+                    currentRespawnPos = { x: checkpointPos.x, y: checkpointPos.y + 10, z: checkpointPos.z };
                     if(window.checkpointFlagMat) window.checkpointFlagMat.color.setHex(0x00ff00);
-                    playTone(880, 0.1, 'sine', 0.2); setTimeout(() => playTone(1100, 0.2, 'sine', 0.2), 100);
+                    playTone(880, 0.1, 'sine', 0.2); 
+                    setTimeout(() => playTone(1100, 0.2, 'sine', 0.2), 100);
                     updateCommentary('checkpoint');
                 }
 
@@ -932,101 +1404,197 @@
                 for (const uid in window.opponentsData) {
                     const data = window.opponentsData[uid];
                     if(uid === myId) continue; 
+                    
                     if (!opponents[uid]) {
-                        const mesh = createHumanoid(0xff0000); scene.add(mesh);
-                        opponents[uid] = { mesh: mesh, lastPos: new THREE.Vector3(data.x, data.y, data.z) };
+                        const oppColor = PLAYER_COLORS[data.colorIndex] || 0xff0000;
+                        const mesh = createHumanoid(oppColor); 
+                        scene.add(mesh);
+                        opponents[uid] = { 
+                            mesh: mesh, 
+                            lastPos: new THREE.Vector3(data.x, data.y, data.z) 
+                        };
                     }
+                    
                     const opp = opponents[uid];
                     const currentPos = new THREE.Vector3(data.x, data.y, data.z);
                     const speed = currentPos.distanceTo(opp.lastPos) * 60; 
                     opp.lastPos.copy(currentPos);
-                    opp.mesh.position.lerp(new THREE.Vector3(data.x, data.y - 0.1, data.z), 0.2); // Faster lerp for P2P
+                    opp.mesh.position.lerp(new THREE.Vector3(data.x, data.y - 0.1, data.z), 0.2);
                     opp.mesh.rotation.y = data.rot;
-                    // Anim
-                    const armL = opp.mesh.getObjectByName('armL'); const armR = opp.mesh.getObjectByName('armR');
-                    const legL = opp.mesh.getObjectByName('legL'); const legR = opp.mesh.getObjectByName('legR');
+                    
+                    // Animation
+                    const armL = opp.mesh.getObjectByName('armL'); 
+                    const armR = opp.mesh.getObjectByName('armR');
+                    const legL = opp.mesh.getObjectByName('legL'); 
+                    const legR = opp.mesh.getObjectByName('legR');
                     if(speed > 0.5) {
                         const runTime = Date.now() * 0.015;
-                        if(armL) armL.rotation.x = Math.sin(runTime) * 0.8; if(armR) armR.rotation.x = -Math.sin(runTime) * 0.8;
-                        if(legL) legL.rotation.x = -Math.sin(runTime) * 0.8; if(legR) legR.rotation.x = Math.sin(runTime) * 0.8;
+                        if(armL) armL.rotation.x = Math.sin(runTime) * 0.8; 
+                        if(armR) armR.rotation.x = -Math.sin(runTime) * 0.8;
+                        if(legL) legL.rotation.x = -Math.sin(runTime) * 0.8; 
+                        if(legR) legR.rotation.x = Math.sin(runTime) * 0.8;
                     } else {
-                        if(armL) armL.rotation.x = 0; if(armR) armR.rotation.x = 0; if(legL) legL.rotation.x = 0; if(legR) legR.rotation.x = 0;
+                        if(armL) armL.rotation.x = 0; if(armR) armR.rotation.x = 0; 
+                        if(legL) legL.rotation.x = 0; if(legR) legR.rotation.x = 0;
                     }
                 }
+                
                 // Cleanup
-                for (const uid in opponents) { if (!window.opponentsData[uid]) { scene.remove(opponents[uid].mesh); delete opponents[uid]; } }
+                for (const uid in opponents) { 
+                    if (!window.opponentsData[uid]) { 
+                        scene.remove(opponents[uid].mesh); 
+                        delete opponents[uid]; 
+                    } 
+                }
 
                 // Player Controls
-                const baseSpeed = 30; const maxSpeed = 50; const acceleration = 0.15; const deceleration = 0.5;
+                const baseSpeed = 30; const maxSpeed = 50; 
+                const acceleration = 0.15; const deceleration = 0.5;
+                
                 if (keys.w) playerMomentum = Math.min(playerMomentum + acceleration, maxSpeed);
                 else playerMomentum = Math.max(playerMomentum - deceleration, baseSpeed);
+                
                 const pct = ((playerMomentum - baseSpeed) / (maxSpeed - baseSpeed)) * 100;
                 document.getElementById('speed-bar').style.width = `${pct}%`;
+                
                 const force = new CANNON.Vec3(0, 0, 0);
                 const fwdX = Math.cos(cameraAngle); const fwdZ = Math.sin(cameraAngle);
                 const rightX = -Math.sin(cameraAngle); const rightZ = Math.cos(cameraAngle);
+                
                 if(keys.w) { force.x += fwdX * playerMomentum; force.z += fwdZ * playerMomentum; }
                 if(keys.s) { force.x -= fwdX * (playerMomentum * 0.6); force.z -= fwdZ * (playerMomentum * 0.6); }
                 if(keys.a) { force.x -= rightX * (playerMomentum * 0.8); force.z -= rightZ * (playerMomentum * 0.8); }
                 if(keys.d) { force.x += rightX * (playerMomentum * 0.8); force.z += rightZ * (playerMomentum * 0.8); }
-                playerBody.velocity.x = force.x * 0.5; playerBody.velocity.z = force.z * 0.5;
-                if(keys.w && Math.abs(playerBody.velocity.y) > 0.5) { playerBody.velocity.x += fwdX * 0.2; playerBody.velocity.z += fwdZ * 0.2; }
-                if(keys.space && (Date.now() - lastGroundedTime < 200)) { lastGroundedTime = 0; playerBody.velocity.y = 20; }
+                
+                playerBody.velocity.x = force.x * 0.5; 
+                playerBody.velocity.z = force.z * 0.5;
+                
+                if(keys.w && Math.abs(playerBody.velocity.y) > 0.5) { 
+                    playerBody.velocity.x += fwdX * 0.2; 
+                    playerBody.velocity.z += fwdZ * 0.2; 
+                }
+                
+                if(keys.space && (Date.now() - lastGroundedTime < 200)) { 
+                    lastGroundedTime = 0; 
+                    playerBody.velocity.y = 20; 
+                    playSoundEffect('jump');
+                }
                 
                 checkFinish();
             }
 
             if(player) {
-                player.mesh.position.copy(player.body.position); player.mesh.position.y -= 0.1; 
-                const vel = player.body.velocity; const speed = Math.sqrt(vel.x*vel.x + vel.z*vel.z);
+                player.mesh.position.copy(player.body.position); 
+                player.mesh.position.y -= 0.1; 
+                
+                const vel = player.body.velocity; 
+                const speed = Math.sqrt(vel.x*vel.x + vel.z*vel.z);
                 if(speed > 0.5) player.mesh.rotation.y = Math.atan2(vel.x, vel.z); 
-                const armL = player.mesh.getObjectByName('armL'); const armR = player.mesh.getObjectByName('armR');
-                const legL = player.mesh.getObjectByName('legL'); const legR = player.mesh.getObjectByName('legR');
+                
+                const armL = player.mesh.getObjectByName('armL'); 
+                const armR = player.mesh.getObjectByName('armR');
+                const legL = player.mesh.getObjectByName('legL'); 
+                const legR = player.mesh.getObjectByName('legR');
+                
                 if(speed > 1 && player.body.position.y > -10) {
                     const runTime = Date.now() * 0.015;
-                    if(armL) armL.rotation.x = Math.sin(runTime) * 0.8; if(armR) armR.rotation.x = -Math.sin(runTime) * 0.8;
-                    if(legL) legL.rotation.x = -Math.sin(runTime) * 0.8; if(legR) legR.rotation.x = Math.sin(runTime) * 0.8;
+                    if(armL) armL.rotation.x = Math.sin(runTime) * 0.8; 
+                    if(armR) armR.rotation.x = -Math.sin(runTime) * 0.8;
+                    if(legL) legL.rotation.x = -Math.sin(runTime) * 0.8; 
+                    if(legR) legR.rotation.x = Math.sin(runTime) * 0.8;
                 } else {
-                    if(armL) armL.rotation.x = 0; if(armR) armR.rotation.x = 0; if(legL) legL.rotation.x = 0; if(legR) legR.rotation.x = 0;
+                    if(armL) armL.rotation.x = 0; if(armR) armR.rotation.x = 0; 
+                    if(legL) legL.rotation.x = 0; if(legR) legR.rotation.x = 0;
                 }
             }
         }
 
         function checkFinish() {
             if(!hasFinished && playerBody.position.x > finishLineX) {
-                hasFinished = true; window.hasFinished = true; showEndScreen(); updateCommentary('finish');
+                hasFinished = true; 
+                window.hasFinished = true; 
+                playSoundEffect('finish');
+                showEndScreen(); 
+                updateCommentary('finish');
             }
-            let myX = playerBody.position.x; let countAhead = 0;
-            for(const uid in window.opponentsData) { if(window.opponentsData[uid].x > myX) countAhead++; }
+            
+            let myX = playerBody.position.x; 
+            let countAhead = 0;
+            for(const uid in window.opponentsData) { 
+                if(window.opponentsData[uid].x > myX) countAhead++; 
+            }
             document.getElementById('rank').innerText = `Rank: ${countAhead + 1}`;
         }
 
         function showEndScreen() {
-            window.gameActive = false; document.exitPointerLock();
+            window.gameActive = false; 
+            gameActive = false;
+            document.exitPointerLock();
+            
             const winScreen = document.getElementById('win-screen');
             const leaderboardDiv = document.getElementById('final-leaderboard');
             const controlsDiv = document.getElementById('end-screen-controls');
-            leaderboardDiv.innerHTML = ''; controlsDiv.innerHTML = '';
+            
+            leaderboardDiv.innerHTML = ''; 
+            controlsDiv.innerHTML = '';
+            
             let allPlayers = [];
-            if (window.playerBody) allPlayers.push({ username: myUsername + " (You)", x: window.playerBody.position.x, finished: window.hasFinished, isLocal: true });
+            if (window.playerBody) allPlayers.push({ 
+                username: myUsername + " (You)", 
+                x: window.playerBody.position.x, 
+                finished: window.hasFinished, 
+                isLocal: true 
+            });
+            
             for (const uid in window.opponentsData) {
-                const p = window.opponentsData[uid]; if(uid === myId) continue;
-                allPlayers.push({ username: p.username, x: p.x, finished: p.finished, isLocal: false });
+                const p = window.opponentsData[uid]; 
+                if(uid === myId) continue;
+                allPlayers.push({ 
+                    username: p.username, 
+                    x: p.x, 
+                    finished: p.finished, 
+                    isLocal: false 
+                });
             }
-            allPlayers.sort((a, b) => { if (a.finished && !b.finished) return -1; if (!a.finished && b.finished) return 1; return b.x - a.x; });
+            
+            allPlayers.sort((a, b) => { 
+                if (a.finished && !b.finished) return -1; 
+                if (!a.finished && b.finished) return 1; 
+                return b.x - a.x; 
+            });
+            
             allPlayers.forEach((p, index) => {
-                const row = document.createElement('div'); row.className = 'leaderboard-row';
-                row.style.color = p.isLocal ? '#ffff00' : 'white'; row.style.fontWeight = p.isLocal ? 'bold' : 'normal';
+                const row = document.createElement('div'); 
+                row.className = 'leaderboard-row';
+                row.style.color = p.isLocal ? '#ffff00' : 'white'; 
+                row.style.fontWeight = p.isLocal ? 'bold' : 'normal';
                 const status = p.finished ? '<span style="color:#44cc44">FINISHED</span>' : Math.floor(p.x) + 'm';
                 row.innerHTML = `<span>#${index+1} ${p.username}</span><span>${status}</span>`;
                 leaderboardDiv.appendChild(row);
             });
-            const menuBtn = document.createElement('button'); menuBtn.innerText = "BACK TO MENU"; menuBtn.onclick = window.backToMenu; menuBtn.style.marginRight = "10px"; controlsDiv.appendChild(menuBtn);
+            
+            const menuBtn = document.createElement('button'); 
+            menuBtn.innerText = "BACK TO MENU"; 
+            menuBtn.onclick = window.backToMenu; 
+            menuBtn.style.marginRight = "10px"; 
+            controlsDiv.appendChild(menuBtn);
+            
             if (isHost) {
-                const nextBtn = document.createElement('button'); nextBtn.innerText = "START NEXT LEVEL"; nextBtn.style.backgroundColor = "#00ffff"; nextBtn.style.color = "#000"; nextBtn.onclick = window.hostStartGame; controlsDiv.appendChild(nextBtn);
+                const nextBtn = document.createElement('button'); 
+                nextBtn.innerText = "START NEXT LEVEL"; 
+                nextBtn.style.backgroundColor = "#00ffff"; 
+                nextBtn.style.color = "#000"; 
+                nextBtn.onclick = window.hostStartGame; 
+                controlsDiv.appendChild(nextBtn);
             } else {
-                const waitText = document.createElement('p'); waitText.innerText = "Waiting for host to start next level..."; waitText.style.fontSize = "0.9em"; waitText.style.color = "#aaa"; waitText.style.marginTop = "10px"; controlsDiv.appendChild(waitText);
+                const waitText = document.createElement('p'); 
+                waitText.innerText = "Waiting for host to start next level..."; 
+                waitText.style.fontSize = "0.9em"; 
+                waitText.style.color = "#aaa"; 
+                waitText.style.marginTop = "10px"; 
+                controlsDiv.appendChild(waitText);
             }
+            
             winScreen.style.display = 'block';
         }
 
@@ -1035,11 +1603,15 @@
             updatePhysics();
             
             if(playerBody) {
-                const targetPos = playerBody.position; const radius = 14; const camHeight = 10;
-                const camX = targetPos.x - radius * Math.cos(cameraAngle); const camZ = targetPos.z - radius * Math.sin(cameraAngle);
+                const targetPos = playerBody.position; 
+                const radius = 14; 
+                const camHeight = 10;
+                const camX = targetPos.x - radius * Math.cos(cameraAngle); 
+                const camZ = targetPos.z - radius * Math.sin(cameraAngle);
                 camera.position.lerp(new THREE.Vector3(camX, targetPos.y + camHeight, camZ), 0.1);
                 camera.lookAt(targetPos.x, targetPos.y + 2, targetPos.z);
             }
+            
             if (backgroundObjects.length > 0) backgroundObjects[0].position.copy(camera.position);
             renderer.render(scene, camera);
         }
