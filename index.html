@@ -87,14 +87,6 @@
             font-size: 1.5em;
         }
 
-        #countdown-overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            display: none; align-items: center; justify-content: center;
-            font-size: 10rem; color: #ff00ff; font-weight: bold;
-            text-shadow: 0 0 20px white; z-index: 50;
-            pointer-events: none;
-        }
-
         /* Game UI */
         #ui {
             position: absolute; top: 20px; left: 20px; color: white; pointer-events: none;
@@ -181,7 +173,6 @@
 </head>
 <body>
     <div id="loading-overlay">Connecting to Cloud...</div>
-    <div id="countdown-overlay">5</div>
 
     <!-- Lobby UI -->
     <div id="lobby-ui">
@@ -197,14 +188,14 @@
             <div style="margin: 15px 0; color: #aaa;">- OR -</div>
             <input type="text" id="code-input" placeholder="ENTER HOST CODE">
             <button class="btn-primary" onclick="joinLobby()">JOIN GAME</button>
-            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">v5.0 (Countdown + Invites)</div>
+            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">v6.3 (Invite Link)</div>
         </div>
 
         <!-- Wait Room -->
         <div id="wait-room" class="panel" style="display: none;">
             <h3 style="margin: 0; color: #ff00ff;">LOBBY CODE</h3>
             <div id="code-display"><span id="lobby-code-display">??????</span></div>
-            <button class="btn-secondary" style="margin-top: 0; margin-bottom: 10px; padding: 5px 10px; font-size: 0.9em;" onclick="copyInviteLink()">🔗 COPY INVITE LINK</button>
+            <button id="invite-btn" class="btn-secondary" style="margin-top: 0; margin-bottom: 10px; padding: 5px 10px; font-size: 0.9em;" onclick="copyInviteLink()">🔗 COPY INVITE LINK</button>
             <div id="player-count">1 / 6 Players</div>
             <ul id="player-list">
                 <!-- Players go here -->
@@ -315,12 +306,24 @@
             const code = document.getElementById('lobby-code-display').innerText;
             if(!code || code === "??????") return;
             
-            const url = window.location.origin + window.location.pathname + '?code=' + code;
+            // Generate clean URL without existing query params
+            const baseUrl = window.location.href.split('?')[0];
+            const url = baseUrl + '?code=' + code;
+            
             navigator.clipboard.writeText(url).then(() => {
-                const btn = document.querySelector('.btn-secondary[onclick="copyInviteLink()"]');
+                const btn = document.getElementById('invite-btn');
                 const orig = btn.innerText;
-                btn.innerText = "COPIED!";
-                setTimeout(() => btn.innerText = orig, 2000);
+                btn.innerText = "LINK COPIED! ✅";
+                btn.style.color = "#44cc44";
+                btn.style.borderColor = "#44cc44";
+                setTimeout(() => {
+                    btn.innerText = orig;
+                    btn.style.color = "";
+                    btn.style.borderColor = "";
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy: ', err);
+                alert("Invite Link: " + url);
             });
         }
 
@@ -489,7 +492,6 @@
             document.getElementById('main-menu').style.display = 'flex';
             document.getElementById('wait-room').style.display = 'none';
             document.getElementById('loading-overlay').style.display = 'none';
-            document.getElementById('countdown-overlay').style.display = 'none';
             
             window.gameActive = false;
             window.clearLevel();
@@ -615,27 +617,6 @@
             animate();
         }
 
-        // Countdown Logic
-        async function runCountdown() {
-            const overlay = document.getElementById('countdown-overlay');
-            overlay.style.display = 'flex';
-            
-            for(let i=5; i>0; i--) {
-                overlay.innerText = i;
-                playTone(440, 0.1, 'sine', 0.5); // Beep
-                await new Promise(r => setTimeout(r, 1000));
-            }
-            
-            overlay.innerText = "GO!";
-            playTone(880, 0.4, 'square', 0.5); // High Beep
-            updateCommentary('start'); 
-            window.gameActive = true; // Unlock controls
-            
-            setTimeout(() => {
-                overlay.style.display = 'none';
-            }, 500);
-        }
-
         window.startMultiplayerGame = function(levelSegments) {
             document.getElementById('win-screen').style.display = 'none';
             clearLevel();
@@ -643,16 +624,15 @@
             buildLevelFromSegments(levelSegments);
             createPlayer();
             
-            window.gameActive = false; // Locked initially
-            gameActive = false;
+            window.gameActive = true; // Immediate start
+            gameActive = true;
             window.hasFinished = false;
             hasFinished = false;
             
             if (!audioCtx) initAudio();
             window.changeMusicTrack(); 
             
-            // Start Countdown sequence
-            runCountdown();
+            updateCommentary('start');
         }
 
         // --- Audio System ---
@@ -718,7 +698,8 @@
 
         function generateSkyboxTexture(theme) {
             const canvas = document.createElement('canvas');
-            canvas.width = 4096; canvas.height = 2048;
+            // REDUCED RESOLUTION TO PREVENT BLACK SCREEN
+            canvas.width = 1024; canvas.height = 512;
             const ctx = canvas.getContext('2d');
             const w = canvas.width; const h = canvas.height;
 
@@ -727,7 +708,7 @@
                 grad.addColorStop(0, '#000000'); grad.addColorStop(1, '#220033');
                 ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
                 ctx.fillStyle = '#ffffff';
-                for(let i=0; i<800; i++) { ctx.beginPath(); ctx.arc(Math.random()*w, Math.random()*h, Math.random()*2, 0, Math.PI*2); ctx.fill(); }
+                for(let i=0; i<400; i++) { ctx.beginPath(); ctx.arc(Math.random()*w, Math.random()*h, Math.random()*1.5, 0, Math.PI*2); ctx.fill(); }
             } else if (theme === 1) { // Sunny Day
                 const grad = ctx.createLinearGradient(0, 0, 0, h);
                 grad.addColorStop(0, '#00BFFF'); grad.addColorStop(1, '#FFFFFF');
@@ -750,6 +731,13 @@
             backgroundObjects.forEach(obj => scene.remove(obj));
             backgroundObjects = [];
             const theme = Math.floor(Math.random() * 4);
+            
+            // FALLBACK BACKGROUND COLOR TO PREVENT BLACK SCREEN
+            if (theme === 0) scene.background = new THREE.Color(0x110022);
+            else if (theme === 1) scene.background = new THREE.Color(0x87CEFA);
+            else if (theme === 2) scene.background = new THREE.Color(0x4B0082);
+            else scene.background = new THREE.Color(0x001133);
+
             const texture = generateSkyboxTexture(theme);
             const geo = new THREE.SphereGeometry(800, 60, 40);
             const mat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide, fog: false });
@@ -894,7 +882,8 @@
         function createPlayer() {
             const mesh = createHumanoid(0x00ff00); scene.add(mesh); playerMesh = mesh; window.playerMesh = mesh;
             const shape = new CANNON.Sphere(0.6); playerBody = new CANNON.Body({ mass: 1, fixedRotation: true, material: world.defaultMaterial });
-            playerBody.addShape(shape); playerBody.position.set(-5, 5, 0); playerBody.linearDamping = 0.0; world.addBody(playerBody);
+            playerBody.addShape(shape); playerBody.position.set(-5, 2, 0); // Spawn lowered to 2 to prevent high bounce
+            playerBody.linearDamping = 0.0; world.addBody(playerBody);
             player = { mesh, body: playerBody, isPlayer: true }; window.playerBody = playerBody;
         }
 
@@ -915,6 +904,17 @@
                 else if(obs.type === 'tilt') obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), Math.sin(time * obs.speed + obs.offset) * 0.5);
                 obs.mesh.position.copy(obs.body.position); obs.mesh.quaternion.copy(obs.body.quaternion);
             });
+
+            if(gameActive || !gameActive) { // Run respawn check ALWAYS (fixes black screen glitch on load)
+                if(playerBody && playerBody.position.y < -30) {
+                    playerBody.position.set(currentRespawnPos.x, currentRespawnPos.y, currentRespawnPos.z);
+                    playerBody.velocity.set(0, 0, 0); 
+                    if(gameActive) {
+                        playerMomentum = 30; // Reset momentum
+                        if(checkpointActivated) updateCommentary('fall'); else updateCommentary('fall');
+                    }
+                }
+            }
 
             if(gameActive) {
                 // Checkpoint
@@ -969,11 +969,7 @@
                 playerBody.velocity.x = force.x * 0.5; playerBody.velocity.z = force.z * 0.5;
                 if(keys.w && Math.abs(playerBody.velocity.y) > 0.5) { playerBody.velocity.x += fwdX * 0.2; playerBody.velocity.z += fwdZ * 0.2; }
                 if(keys.space && (Date.now() - lastGroundedTime < 200)) { lastGroundedTime = 0; playerBody.velocity.y = 20; }
-                if(playerBody.position.y < -30) {
-                    playerBody.position.set(currentRespawnPos.x, currentRespawnPos.y, currentRespawnPos.z);
-                    playerBody.velocity.set(0, 0, 0); playerMomentum = baseSpeed;
-                    if(checkpointActivated) updateCommentary('fall'); else updateCommentary('fall');
-                }
+                
                 checkFinish();
             }
 
