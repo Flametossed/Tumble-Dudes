@@ -860,34 +860,24 @@
             
             document.getElementById('player-count').innerText = `${count} / 6 Players`;
             
+            // Update ready button text and styling
+            const myData = window.opponentsData[myId];
+            if (myData && myData.ready) {
+                readyBtn.innerText = '✗ UNREADY';
+                readyBtn.style.background = '#cc4444';
+            } else {
+                readyBtn.innerText = '✓ READY UP';
+                readyBtn.style.background = '#44cc44';
+            }
+            
             // Update button visibility and state
             if (isHost) {
                 readyBtn.style.display = 'block';
                 startBtn.style.display = 'block';
-                startBtn.disabled = !allReady || count < 1;
-                
-                // Update ready button text
-                const myData = window.opponentsData[myId];
-                if (myData && myData.ready) {
-                    readyBtn.innerText = '✗ UNREADY';
-                    readyBtn.style.background = '#cc4444';
-                } else {
-                    readyBtn.innerText = '✓ READY UP';
-                    readyBtn.style.background = '#44cc44';
-                }
+                startBtn.disabled = !allReady || count < 2;
             } else {
                 readyBtn.style.display = 'block';
                 startBtn.style.display = 'none';
-                
-                // Update ready button text for clients
-                const myData = window.opponentsData[myId];
-                if (myData && myData.ready) {
-                    readyBtn.innerText = '✗ UNREADY';
-                    readyBtn.style.background = '#cc4444';
-                } else {
-                    readyBtn.innerText = '✓ READY UP';
-                    readyBtn.style.background = '#44cc44';
-                }
             }
             
             // Show waiting message if solo
@@ -1393,7 +1383,7 @@
             const ctx = canvas.getContext('2d');
             
             // Background with semi-transparent black
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
             // Text
