@@ -298,7 +298,7 @@
 <body>
     <div id="loading-overlay">
         <div>Connecting to Cloud...</div>
-        <div style="font-size: 0.5em; color: #888;">Test Branch v7.1</div>
+        <div style="font-size: 0.5em; color: #888;">Test Branch v7.2</div>
     </div>
     
     <div id="notification-area"></div>
@@ -321,7 +321,7 @@
             <div style="margin-top: 20px; font-size: 0.75em; color: #888; max-width: 300px; line-height: 1.4;">
                 🛡️ If connection fails: Disable browser tracking protection or try Incognito mode
             </div>
-            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">TEST BRANCH v7.1 (Connection Fix)</div>
+            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">TEST BRANCH v7.2 (Sound Fix)</div>
         </div>
 
         <!-- Wait Room -->
@@ -435,6 +435,9 @@
         
         // Countdown state
         let isCountingDown = false;
+        
+        // Sound effect cooldowns
+        let lastCollisionSound = 0;
 
         // --- COMMENTARY PHRASES ---
         const COMMENTARY = {
@@ -1355,12 +1358,15 @@
                         if(c.ni.y > 0.5) isGrounded = true; 
                     }
                     
-                    // Collision sound effect
+                    // Collision sound effect (with cooldown to prevent buzzing)
                     if(gameActive) {
+                        const now = Date.now();
                         const relVel = c.bi === playerBody ? 
                             c.bi.velocity.length() : c.bj.velocity.length();
-                        if(relVel > 15) {
+                        // Only play on significant impacts (not normal running), with cooldown
+                        if(relVel > 25 && now - lastCollisionSound > 500) {
                             playSoundEffect('collision');
+                            lastCollisionSound = now;
                         }
                     }
                 }
