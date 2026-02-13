@@ -334,7 +334,8 @@
             <ul id="player-list">
                 <!-- Players go here -->
             </ul>
-            <button id="start-btn" class="btn-primary" onclick="hostStartGame()">START RACE</button>
+            <button id="ready-btn" class="btn-primary" onclick="toggleReady()">✓ READY UP</button>
+            <button id="start-btn" class="btn-primary" onclick="hostStartGame()" style="display: none;">START RACE</button>
             <p id="wait-text" style="font-size: 0.8em; color: #aaa; margin-top: 10px;">Waiting for host...</p>
             <button class="btn-secondary" onclick="backToMenu()">Cancel</button>
         </div>
@@ -607,7 +608,8 @@
                     window.opponentsData[myId] = { 
                         username: myUsername, 
                         isHost: true,
-                        colorIndex: myColorIndex
+                        colorIndex: myColorIndex,
+                        ready: false
                     };
                     updateLobbyList();
                     startPingLoop();
@@ -743,13 +745,26 @@
                     username: data.username, 
                     isHost: false,
                     colorIndex: colorIndex,
+                    ready: false,
                     x: -5, y: 5, z: 0, rot: 0, finished: false
                 };
+                
+                // Unready all players when a new player joins
+                for (const pid in window.opponentsData) {
+                    window.opponentsData[pid].ready = false;
+                }
+                
                 updateLobbyList();
                 broadcastState();
             } else if (data.type === 'pos') {
                 if(window.opponentsData[clientId]) {
                     Object.assign(window.opponentsData[clientId], data.state);
+                }
+            } else if (data.type === 'ready') {
+                if(window.opponentsData[clientId]) {
+                    window.opponentsData[clientId].ready = data.ready;
+                    updateLobbyList();
+                    broadcastState();
                 }
             } else if (data.type === 'pong') {
                 // Client responded to ping
@@ -814,9 +829,12 @@
         function updateLobbyList() {
             const list = document.getElementById('player-list');
             const waitingMsg = document.getElementById('waiting-message');
+            const startBtn = document.getElementById('start-btn');
+            const readyBtn = document.getElementById('ready-btn');
             
             list.innerHTML = '';
             let count = 0;
+            let allReady = true;
             
             for(const pid in window.opponentsData) {
                 const p = window.opponentsData[pid];
@@ -829,20 +847,71 @@
                 li.appendChild(colorDot);
                 
                 const nameSpan = document.createElement('span');
-                nameSpan.innerText = `${p.username} ${p.isHost ? '👑' : ''}`;
+                const readyIcon = p.ready ? '✓ ' : '';
+                nameSpan.innerText = `${readyIcon}${p.username} ${p.isHost ? '👑' : ''}`;
+                nameSpan.style.color = p.ready ? '#44cc44' : '#ffffff';
                 li.appendChild(nameSpan);
                 
                 list.appendChild(li);
                 count++;
+                
+                if (!p.ready) allReady = false;
             }
             
             document.getElementById('player-count').innerText = `${count} / 6 Players`;
+            
+            // Update ready button text and styling
+            const myData = window.opponentsData[myId];
+            if (myData && myData.ready) {
+                readyBtn.innerText = '✗ UNREADY';
+                readyBtn.style.background = '#cc4444';
+            } else {
+                readyBtn.innerText = '✓ READY UP';
+                readyBtn.style.background = '#44cc44';
+            }
+            
+            // Update button visibility and state
+            if (isHost) {
+                // Single player: hide ready button, enable start button
+                if (count === 1) {
+                    readyBtn.style.display = 'none';
+                    startBtn.style.display = 'block';
+                    startBtn.disabled = false;
+                } else {
+                    // Multiplayer: show ready button, require all ready to start
+                    readyBtn.style.display = 'block';
+                    startBtn.style.display = 'block';
+                    startBtn.disabled = !allReady;
+                }
+            } else {
+                readyBtn.style.display = 'block';
+                startBtn.style.display = 'none';
+            }
             
             // Show waiting message if solo
             if(isHost && count === 1) {
                 waitingMsg.style.display = 'block';
             } else {
                 waitingMsg.style.display = 'none';
+            }
+        }
+
+        function toggleReady() {
+            if (!myId || !window.opponentsData[myId]) return;
+            
+            const newReadyState = !window.opponentsData[myId].ready;
+            window.opponentsData[myId].ready = newReadyState;
+            
+            if (isHost) {
+                // Host updates locally and broadcasts
+                updateLobbyList();
+                broadcastState();
+            } else {
+                // Client sends ready state to host
+                if (hostConn && hostConn.open) {
+                    hostConn.send({ type: 'ready', ready: newReadyState });
+                }
+                updateLobbyList();
             }
         }
 
@@ -950,6 +1019,7 @@
         window.createLobby = createLobby;
         window.joinLobby = joinLobby;
         window.hostStartGame = hostStartGame;
+        window.toggleReady = toggleReady;
         window.copyInviteLink = copyInviteLink;
         window.backToMenu = backToMenu;
 
@@ -1314,7 +1384,31 @@
             ctx.stroke(); return new THREE.CanvasTexture(canvas);
         }
 
-        function createHumanoid(color) {
+        function createNameSprite(name) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            
+            // Background with semi-transparent black
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Text
+            ctx.font = 'bold 32px Arial';
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(name, canvas.width / 2, canvas.height / 2);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.scale.set(2, 0.5, 1);
+            return sprite;
+        }
+
+        function createHumanoid(color, name) {
             const group = new THREE.Group();
             const headGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
             const skinMat = new THREE.MeshPhongMaterial({ color: 0xffccaa }); 
@@ -1329,12 +1423,21 @@
             const legGeo = new THREE.BoxGeometry(0.22, 0.8, 0.22); const legMat = new THREE.MeshPhongMaterial({ color: 0x333333 }); 
             const legL = new THREE.Mesh(legGeo, legMat); legL.position.set(-0.2, -0.6, 0); legL.name = "legL"; legL.castShadow = true; group.add(legL);
             const legR = new THREE.Mesh(legGeo, legMat); legR.position.set(0.2, -0.6, 0); legR.name = "legR"; legR.castShadow = true; group.add(legR);
+            
+            // Add name sprite if name is provided
+            if (name) {
+                const nameSprite = createNameSprite(name);
+                nameSprite.position.y = 1.6;
+                nameSprite.name = "nameSprite";
+                group.add(nameSprite);
+            }
+            
             return group;
         }
 
         function createPlayer() {
-            const mesh = createHumanoid(PLAYER_COLORS[myColorIndex]); 
-            scene.add(mesh); 
+            const mesh = createHumanoid(PLAYER_COLORS[myColorIndex], myUsername); 
+            scene.add(mesh);
             playerMesh = mesh; 
             window.playerMesh = mesh;
             
@@ -1412,7 +1515,7 @@
                     
                     if (!opponents[uid]) {
                         const oppColor = PLAYER_COLORS[data.colorIndex] || 0xff0000;
-                        const mesh = createHumanoid(oppColor); 
+                        const mesh = createHumanoid(oppColor, data.username); 
                         scene.add(mesh);
                         opponents[uid] = { 
                             mesh: mesh, 
@@ -1615,6 +1718,16 @@
                 const camZ = targetPos.z - radius * Math.sin(cameraAngle);
                 camera.position.lerp(new THREE.Vector3(camX, targetPos.y + camHeight, camZ), 0.1);
                 camera.lookAt(targetPos.x, targetPos.y + 2, targetPos.z);
+            }
+            
+            // Make name sprites face camera
+            if (playerMesh) {
+                const nameSprite = playerMesh.getObjectByName('nameSprite');
+                if (nameSprite) nameSprite.lookAt(camera.position);
+            }
+            for (const uid in opponents) {
+                const nameSprite = opponents[uid].mesh.getObjectByName('nameSprite');
+                if (nameSprite) nameSprite.lookAt(camera.position);
             }
             
             if (backgroundObjects.length > 0) backgroundObjects[0].position.copy(camera.position);
