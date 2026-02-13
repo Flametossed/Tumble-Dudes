@@ -872,9 +872,17 @@
             
             // Update button visibility and state
             if (isHost) {
-                readyBtn.style.display = 'block';
-                startBtn.style.display = 'block';
-                startBtn.disabled = !allReady || count < 2;
+                // Single player: hide ready button, enable start button
+                if (count === 1) {
+                    readyBtn.style.display = 'none';
+                    startBtn.style.display = 'block';
+                    startBtn.disabled = false;
+                } else {
+                    // Multiplayer: show ready button, require all ready to start
+                    readyBtn.style.display = 'block';
+                    startBtn.style.display = 'block';
+                    startBtn.disabled = !allReady;
+                }
             } else {
                 readyBtn.style.display = 'block';
                 startBtn.style.display = 'none';
