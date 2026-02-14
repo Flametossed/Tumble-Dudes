@@ -440,8 +440,9 @@
         // Sound effect cooldowns
         let lastCollisionSound = 0;
 
-        // Fixed timestep for consistent physics - locked to 60 FPS
+        // Fixed timestep for consistent physics - locked to 60 FPS rendering
         let lastRenderTime = performance.now(); // For 60 FPS frame rate locking
+        let lastPhysicsTime = performance.now(); // For tracking actual elapsed time for physics
         let accumulator = 0;
         const fixedTimeStep = 1/60; // 60 FPS physics
         const targetFrameTime = 1000/60; // 60 FPS target (16.67ms per frame)
@@ -1718,17 +1719,18 @@
             
             const currentTime = performance.now();
             
-            // Lock frame rate to 60 FPS for better compatibility
+            // Lock rendering to 60 FPS for better compatibility
             const timeSinceLastRender = currentTime - lastRenderTime;
             if (timeSinceLastRender < targetFrameTime) {
-                return; // Skip this frame if not enough time has passed
+                return; // Skip rendering if not enough time has passed
             }
             
-            // Reset render time to current to avoid catch-up stuttering
+            // Reset render time to current
             lastRenderTime = currentTime;
             
-            // Use fixed timestep for physics (always 1/60th of a second at 60 FPS)
-            const deltaTime = targetFrameTime / 1000; // Convert to seconds
+            // Calculate actual time elapsed for physics
+            const deltaTime = (currentTime - lastPhysicsTime) / 1000; // Convert to seconds
+            lastPhysicsTime = currentTime;
             
             // Cap delta time to prevent spiral of death
             const clampedDelta = Math.min(deltaTime, 0.1);
@@ -1746,8 +1748,8 @@
                 const camHeight = 10;
                 const camX = targetPos.x - radius * Math.cos(cameraAngle); 
                 const camZ = targetPos.z - radius * Math.sin(cameraAngle);
-                // Consistent camera smoothing at locked 60 FPS (lerp factor is constant at 60 FPS)
-                const lerpFactor = 1 - CAMERA_SMOOTHING_BASE;
+                // Time-based camera smoothing for consistent movement
+                const lerpFactor = 1 - Math.pow(CAMERA_SMOOTHING_BASE, clampedDelta * 60);
                 camera.position.lerp(new THREE.Vector3(camX, targetPos.y + camHeight, camZ), lerpFactor);
                 camera.lookAt(targetPos.x, targetPos.y + 2, targetPos.z);
             }
