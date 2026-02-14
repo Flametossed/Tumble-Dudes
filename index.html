@@ -444,6 +444,7 @@
         let lastFrameTime = performance.now();
         let accumulator = 0;
         const fixedTimeStep = 1/60; // 60 FPS physics
+        const CAMERA_SMOOTHING_BASE = 0.9; // Base value for time-based camera lerp smoothing
 
         // --- COMMENTARY PHRASES ---
         const COMMENTARY = {
@@ -1735,7 +1736,9 @@
                 const camHeight = 10;
                 const camX = targetPos.x - radius * Math.cos(cameraAngle); 
                 const camZ = targetPos.z - radius * Math.sin(cameraAngle);
-                camera.position.lerp(new THREE.Vector3(camX, targetPos.y + camHeight, camZ), 0.1);
+                // Time-based lerp to ensure consistent camera smoothing across all refresh rates
+                const lerpFactor = 1 - Math.pow(CAMERA_SMOOTHING_BASE, clampedDelta * 60);
+                camera.position.lerp(new THREE.Vector3(camX, targetPos.y + camHeight, camZ), lerpFactor);
                 camera.lookAt(targetPos.x, targetPos.y + 2, targetPos.z);
             }
             
