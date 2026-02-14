@@ -442,8 +442,10 @@
 
         // Fixed timestep for consistent physics across all refresh rates
         let lastFrameTime = performance.now();
+        let lastRenderTime = performance.now(); // For 60 FPS frame rate locking
         let accumulator = 0;
         const fixedTimeStep = 1/60; // 60 FPS physics
+        const targetFrameTime = 1000/60; // 60 FPS target (16.67ms per frame)
         const CAMERA_SMOOTHING_BASE = 0.9; // Base value for time-based camera lerp smoothing
 
         // --- COMMENTARY PHRASES ---
@@ -1715,8 +1717,18 @@
         function animate() {
             requestAnimationFrame(animate); 
             
-            // Fixed timestep accumulator for consistent physics across all refresh rates
             const currentTime = performance.now();
+            
+            // Lock frame rate to 60 FPS for better compatibility
+            const timeSinceLastRender = currentTime - lastRenderTime;
+            if (timeSinceLastRender < targetFrameTime) {
+                return; // Skip this frame if not enough time has passed
+            }
+            
+            // Update lastRenderTime, accounting for any excess time
+            lastRenderTime = currentTime - (timeSinceLastRender % targetFrameTime);
+            
+            // Fixed timestep accumulator for consistent physics
             const deltaTime = (currentTime - lastFrameTime) / 1000; // Convert to seconds
             lastFrameTime = currentTime;
             
