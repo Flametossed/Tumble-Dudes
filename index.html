@@ -1724,8 +1724,8 @@
                 return; // Skip this frame if not enough time has passed
             }
             
-            // Update lastRenderTime by exactly one frame interval
-            lastRenderTime += targetFrameTime;
+            // Reset render time to current to avoid catch-up stuttering
+            lastRenderTime = currentTime;
             
             // Use fixed timestep for physics (always 1/60th of a second at 60 FPS)
             const deltaTime = targetFrameTime / 1000; // Convert to seconds
@@ -1746,8 +1746,8 @@
                 const camHeight = 10;
                 const camX = targetPos.x - radius * Math.cos(cameraAngle); 
                 const camZ = targetPos.z - radius * Math.sin(cameraAngle);
-                // Consistent camera smoothing at locked 60 FPS
-                const lerpFactor = 1 - Math.pow(CAMERA_SMOOTHING_BASE, deltaTime * 60);
+                // Consistent camera smoothing at locked 60 FPS (lerp factor is constant at 60 FPS)
+                const lerpFactor = 1 - CAMERA_SMOOTHING_BASE;
                 camera.position.lerp(new THREE.Vector3(camX, targetPos.y + camHeight, camZ), lerpFactor);
                 camera.lookAt(targetPos.x, targetPos.y + 2, targetPos.z);
             }
