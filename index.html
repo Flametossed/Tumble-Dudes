@@ -440,8 +440,7 @@
         // Sound effect cooldowns
         let lastCollisionSound = 0;
 
-        // Fixed timestep for consistent physics across all refresh rates
-        let lastFrameTime = performance.now();
+        // Fixed timestep for consistent physics - locked to 60 FPS
         let lastRenderTime = performance.now(); // For 60 FPS frame rate locking
         let accumulator = 0;
         const fixedTimeStep = 1/60; // 60 FPS physics
@@ -1725,12 +1724,11 @@
                 return; // Skip this frame if not enough time has passed
             }
             
-            // Update lastRenderTime, accounting for any excess time
-            lastRenderTime = currentTime - (timeSinceLastRender % targetFrameTime);
+            // Update lastRenderTime by exactly one frame interval
+            lastRenderTime += targetFrameTime;
             
-            // Fixed timestep accumulator for consistent physics
-            const deltaTime = (currentTime - lastFrameTime) / 1000; // Convert to seconds
-            lastFrameTime = currentTime;
+            // Use fixed timestep for physics (always 1/60th of a second at 60 FPS)
+            const deltaTime = targetFrameTime / 1000; // Convert to seconds
             
             // Cap delta time to prevent spiral of death
             const clampedDelta = Math.min(deltaTime, 0.1);
@@ -1748,8 +1746,8 @@
                 const camHeight = 10;
                 const camX = targetPos.x - radius * Math.cos(cameraAngle); 
                 const camZ = targetPos.z - radius * Math.sin(cameraAngle);
-                // Time-based lerp to ensure consistent camera smoothing across all refresh rates
-                const lerpFactor = 1 - Math.pow(CAMERA_SMOOTHING_BASE, clampedDelta * 60);
+                // Consistent camera smoothing at locked 60 FPS
+                const lerpFactor = 1 - Math.pow(CAMERA_SMOOTHING_BASE, deltaTime * 60);
                 camera.position.lerp(new THREE.Vector3(camX, targetPos.y + camHeight, camZ), lerpFactor);
                 camera.lookAt(targetPos.x, targetPos.y + 2, targetPos.z);
             }
