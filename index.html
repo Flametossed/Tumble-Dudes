@@ -440,6 +440,11 @@
         // Sound effect cooldowns
         let lastCollisionSound = 0;
 
+        // Fixed timestep for consistent physics across all refresh rates
+        let lastFrameTime = performance.now();
+        let accumulator = 0;
+        const fixedTimeStep = 1/60; // 60 FPS physics
+
         // --- COMMENTARY PHRASES ---
         const COMMENTARY = {
             start: [
@@ -1453,7 +1458,7 @@
         }
 
         function updatePhysics() {
-            world.step(1/60);
+            world.step(fixedTimeStep);
             let isGrounded = false;
             for(let i = 0; i < world.contacts.length; i++) {
                 const c = world.contacts[i];
@@ -1708,7 +1713,21 @@
 
         function animate() {
             requestAnimationFrame(animate); 
-            updatePhysics();
+            
+            // Fixed timestep accumulator for consistent physics across all refresh rates
+            const currentTime = performance.now();
+            const deltaTime = (currentTime - lastFrameTime) / 1000; // Convert to seconds
+            lastFrameTime = currentTime;
+            
+            // Cap delta time to prevent spiral of death
+            const clampedDelta = Math.min(deltaTime, 0.1);
+            accumulator += clampedDelta;
+            
+            // Update physics in fixed timesteps
+            while (accumulator >= fixedTimeStep) {
+                updatePhysics();
+                accumulator -= fixedTimeStep;
+            }
             
             if(playerBody) {
                 const targetPos = playerBody.position; 
