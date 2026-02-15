@@ -440,10 +440,12 @@
         // Sound effect cooldowns
         let lastCollisionSound = 0;
 
-        // Fixed timestep for consistent physics across all refresh rates
-        let lastFrameTime = performance.now();
+        // Fixed timestep for consistent physics - locked to 60 FPS rendering
+        let lastRenderTime = performance.now(); // For 60 FPS frame rate locking
+        let lastPhysicsTime = performance.now(); // For tracking actual elapsed time for physics
         let accumulator = 0;
         const fixedTimeStep = 1/60; // 60 FPS physics
+        const targetFrameTime = 1000/60; // 60 FPS target (16.67ms per frame)
         const CAMERA_SMOOTHING_BASE = 0.9; // Base value for time-based camera lerp smoothing
 
         // --- COMMENTARY PHRASES ---
@@ -1715,10 +1717,20 @@
         function animate() {
             requestAnimationFrame(animate); 
             
-            // Fixed timestep accumulator for consistent physics across all refresh rates
             const currentTime = performance.now();
-            const deltaTime = (currentTime - lastFrameTime) / 1000; // Convert to seconds
-            lastFrameTime = currentTime;
+            
+            // Lock rendering to 60 FPS for better compatibility
+            const timeSinceLastRender = currentTime - lastRenderTime;
+            if (timeSinceLastRender < targetFrameTime) {
+                return; // Skip rendering if not enough time has passed
+            }
+            
+            // Reset render time to current
+            lastRenderTime = currentTime;
+            
+            // Calculate actual time elapsed for physics
+            const deltaTime = (currentTime - lastPhysicsTime) / 1000; // Convert to seconds
+            lastPhysicsTime = currentTime;
             
             // Cap delta time to prevent spiral of death
             const clampedDelta = Math.min(deltaTime, 0.1);
@@ -1736,7 +1748,7 @@
                 const camHeight = 10;
                 const camX = targetPos.x - radius * Math.cos(cameraAngle); 
                 const camZ = targetPos.z - radius * Math.sin(cameraAngle);
-                // Time-based lerp to ensure consistent camera smoothing across all refresh rates
+                // Time-based camera smoothing for consistent movement
                 const lerpFactor = 1 - Math.pow(CAMERA_SMOOTHING_BASE, clampedDelta * 60);
                 camera.position.lerp(new THREE.Vector3(camX, targetPos.y + camHeight, camZ), lerpFactor);
                 camera.lookAt(targetPos.x, targetPos.y + 2, targetPos.z);
