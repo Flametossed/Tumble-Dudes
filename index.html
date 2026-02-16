@@ -1647,12 +1647,10 @@
                         break;
 
                     case 'hammers': { 
-                        addBoxRelative(25, 1, 10, 12.5, 0, 0, 0x888888);
-                        // Post
-                        addBoxRelative(1, 6, 1, 12.5, 3, 0, 0x222222);
-                        // Hammer
+                        addBoxRelative(25, 1, 10, 12.5, 0, 0, baseColor);
+                        addBoxRelative(1, 6, 1, 12.5, 3, 0, theme.wall);
                         const t = transform(12.5, 6, 0);
-                        const hammer = createBox(8, 1, 1, t.x, t.y, t.z, 0xff2222, 10, 0, currentAngle, 0);
+                        const hammer = createBox(8, 1, 1, t.x, t.y, t.z, theme.primary, 10, 0, currentAngle, 0);
                         hammer.body.type = CANNON.Body.KINEMATIC; 
                         obstacles.push({ ...hammer, type: 'spinner', speed: 3 }); 
                         currentPos = transform(25, 0, 0);
@@ -1681,13 +1679,13 @@
                         
                         // Spinner Left
                         const t1 = transform(15, 6, -8);
-                        const h1 = createBox(8, 1, 1, t1.x, t1.y, t1.z, 0xff2222, 10, 0, currentAngle, 0);
+                        const h1 = createBox(8, 1, 1, t1.x, t1.y, t1.z, theme.primary, 10, 0, currentAngle, 0);
                         h1.body.type = CANNON.Body.KINEMATIC;
                         obstacles.push({ ...h1, type: 'spinner', speed: 4 });
                         
                         // Spinner Left 2
                         const t2 = transform(35, 6, -8);
-                        const h2 = createBox(8, 1, 1, t2.x, t2.y, t2.z, 0xff2222, 10, 0, currentAngle, 0);
+                        const h2 = createBox(8, 1, 1, t2.x, t2.y, t2.z, theme.primary, 10, 0, currentAngle, 0);
                         h2.body.type = CANNON.Body.KINEMATIC;
                         obstacles.push({ ...h2, type: 'spinner', speed: -4 });
 
@@ -1707,15 +1705,15 @@
                         // Left Ramp path
                         const riseH = 8; const angleH = Math.atan2(riseH, 20); const hypH = Math.sqrt(20*20 + riseH*riseH);
                         // Up
-                        addRamp(hypH, 1, 8, 15, riseH/2, -8, 0xff00ff, angleH);
+                        addRamp(hypH, 1, 8, 15, riseH/2, -8, theme.primary, angleH);
                         // Flat
-                        addBoxRelative(10, 1, 8, 30, riseH, -8, 0xff00ff);
+                        addBoxRelative(10, 1, 8, 30, riseH, -8, theme.primary);
                         // Down
-                        addRamp(hypH, 1, 8, 45, riseH/2, -8, 0xff00ff, -angleH);
+                        addRamp(hypH, 1, 8, 45, riseH/2, -8, theme.primary, -angleH);
                         
                         // Right Tunnel path
-                        addBoxRelative(50, 1, 8, 30, 0, 8, baseColor); // Centered at 30
-                        addBoxRelative(50, 1, 8, 30, 5, 8, 0x555555);
+                        addBoxRelative(50, 1, 8, 30, 0, 8, baseColor);
+                        addBoxRelative(50, 1, 8, 30, 5, 8, theme.wall);
                         
                         currentPos = transform(55, 0, 0);
                         break; 
@@ -1749,7 +1747,7 @@
 
                     case 'steps_up': {
                         for(let i=0; i<4; i++) {
-                            addBoxRelative(5, 1 + i, 10, 2.5 + (i*5), (i * 0.5), 0, 0x444444);
+                            addBoxRelative(5, 1 + i, 10, 2.5 + (i*5), (i * 0.5), 0, i % 2 === 0 ? theme.floor1 : theme.floor2);
                         }
                         currentPos = transform(20, 2.0, 0);
                         break;
@@ -1757,21 +1755,20 @@
 
                     case 'steps_down': {
                         for(let i=0; i<4; i++) {
-                            // Target tops: -0.5, -1.0, -1.5, -2.0 relative to start floor (0.0)
                             const y = -(i+1)*0.5 - 2.0;
-                            addBoxRelative(5, 4, 10, 2.5 + (i*5), y, 0, 0x444444);
+                            addBoxRelative(5, 4, 10, 2.5 + (i*5), y, 0, i % 2 === 0 ? theme.floor1 : theme.floor2);
                         }
                         currentPos = transform(20, -2.0, 0);
                         break;
                     }
 
                     case 'low_spinners': {
-                         addBoxRelative(30, 1, 10, 15, 0, 0, 0x888888);
+                         addBoxRelative(30, 1, 10, 15, 0, 0, baseColor);
                          for(let i=0; i<2; i++) {
                             const lx = 10 + (i*10);
-                            addBoxRelative(1, 0.5, 1, lx, 0.5, 0, 0x222222);
+                            addBoxRelative(1, 0.5, 1, lx, 0.5, 0, theme.wall);
                             const t = transform(lx, 0.75, 0);
-                            const bar = createBox(8, 0.5, 0.5, t.x, t.y, t.z, 0xff0000, 10, 0, currentAngle, 0);
+                            const bar = createBox(8, 0.5, 0.5, t.x, t.y, t.z, theme.primary, 10, 0, currentAngle, 0);
                             bar.body.type = CANNON.Body.KINEMATIC;
                             obstacles.push({ ...bar, type: 'spinner', speed: 15 });
                          }
@@ -1797,7 +1794,7 @@
                         for(let i=0; i<3; i++) {
                             const lx = 5 + (i*5);
                             const t = transform(lx, 2, -4);
-                            const p = createBox(2, 2, 4, t.x, t.y, t.z, 0xff0000, 100, 0, currentAngle, 0);
+                            const p = createBox(2, 2, 4, t.x, t.y, t.z, theme.primary, 100, 0, currentAngle, 0);
                             p.body.type = CANNON.Body.KINEMATIC;
                             obstacles.push({ ...p, type: 'puncher', speed: 3, offset: i, initialPos: {x: t.x, y: t.y, z: t.z}, levelAngle: currentAngle });
                         }
@@ -1808,10 +1805,8 @@
                     // --- NEW SEGMENT TYPES ---
 
                     case 'gap_jump': {
-                        // Platform, gap, platform - player must jump across
-                        // Gap of 8 units is safe with jump velocity 20 and speed 30
+                        // Platform, gap, platform - player must jump across an 8-unit gap
                         addBoxRelative(10, 1, 10, 5, 0, 0, baseColor);
-                        // Gap of 8 units (no floor)
                         addBoxRelative(10, 1, 10, 23, 0, 0, baseColor);
                         currentPos = transform(28, 0, 0);
                         break;
@@ -1831,12 +1826,12 @@
 
                     case 'floating_islands': {
                         // Small platforms with gaps - hop between them
-                        // Each island 5x5, gaps of 6 units (safe jump distance)
-                        addBoxRelative(5, 1, 5, 2.5, 0, 0, baseColor); // starting island
+                        // Each island 5x5, edge-to-edge gaps of ~6 units
+                        addBoxRelative(5, 1, 5, 2.5, 0, 0, baseColor);
                         addBoxRelative(5, 1, 5, 13.5, 1, -3, theme.primary);
                         addBoxRelative(5, 1, 5, 24.5, 0.5, 2, theme.secondary);
                         addBoxRelative(5, 1, 5, 35.5, 0, -1, theme.primary);
-                        addBoxRelative(8, 1, 10, 46, 0, 0, baseColor); // landing
+                        addBoxRelative(8, 1, 10, 46, 0, 0, baseColor);
                         currentPos = transform(50, 0, 0);
                         break;
                     }
@@ -1910,7 +1905,7 @@
                         // Spinning bumpers at intervals
                         for (let i = 0; i < 3; i++) {
                             const lx = 10 + i * 10;
-                            addBoxRelative(1, 4, 1, lx, 2, 0, 0x222222); // post
+                            addBoxRelative(1, 4, 1, lx, 2, 0, theme.wall); // post
                             const t = transform(lx, 3.5, 0);
                             const bar = createBox(10, 0.8, 0.8, t.x, t.y, t.z, theme.primary, 10, 0, currentAngle, 0);
                             bar.body.type = CANNON.Body.KINEMATIC;
