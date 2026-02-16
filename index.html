@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tumble Dudes</title>
+    <title>Tumble Dudes - Flow Edition</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
     <!-- PeerJS for P2P Networking -->
@@ -345,7 +345,7 @@
 <body>
     <div id="loading-overlay">
         <div>Connecting to Cloud...</div>
-        <div style="font-size: 0.5em; color: #888;">v8.6 Styles</div>
+        <div style="font-size: 0.5em; color: #888;">v9.2 Flow Edition</div>
     </div>
     
     <div id="notification-area"></div>
@@ -442,7 +442,7 @@
             </div>
             
             <div style="margin-top: 15px; font-size: 0.7em; color: #666;">
-                v8.8 - Expanded Levels
+                v9.2 - Flow Edition
             </div>
         </div>
 
@@ -656,7 +656,7 @@
         let opponents = {};
         let obstacles = [];
         let gameActive = false;
-        let finishLineX = 0;
+        let finishLinePos = new THREE.Vector3();
         // Commentary vars removed
         let playerMomentum = 20; 
         let hasFinished = false;
@@ -1327,19 +1327,76 @@
             const skybox = new THREE.Mesh(geo, mat); scene.add(skybox); backgroundObjects.push(skybox);
         }
 
+        // --- NEW SMART GENERATOR LOGIC ---
         window.generateRandomLevelStructure = function() {
-            // Enhanced list with new obstacle types
-            const types = [
-                'path', 'narrow', 'hammers', 'tilts', 'walls', 
-                'ramp_up', 'ramp_down', 'shift_left', 'shift_right', 
-                'split_hammers_walls', 'split_ramp_tunnel',
-                // New types
-                'rotating_disc', 'moving_platforms', 'steps_up', 'steps_down', 
-                'low_spinners', 'arch_jump', 'punch_wall'
-            ];
-            const length = 25 + Math.floor(Math.random() * 15); const level = ['start'];
-            for(let i=0; i<length; i++) { level.push(types[Math.floor(Math.random() * types.length)]); }
-            level.push('finish'); return level;
+            const easy = ['path', 'walls', 'arch_jump'];
+            const medium = ['narrow', 'tilts', 'steps_up', 'steps_down', 'ramp_up', 'ramp_down'];
+            const hard = ['hammers', 'split_hammers_walls', 'split_ramp_tunnel', 'rotating_disc', 'moving_platforms', 'low_spinners', 'punch_wall'];
+            
+            const level = ['start'];
+            let difficulty = 0; // 0=easy, 1=med, 2=hard
+            let segmentsSinceTurn = 0;
+            let currentElevation = 0; // rough tracking
+            
+            const totalLength = 30 + Math.floor(Math.random() * 10);
+            
+            for(let i=0; i<totalLength; i++) {
+                const last = level[level.length-1];
+                let next = 'path';
+                
+                // Rule 1: Always buffer turns
+                if (last === 'turn_left' || last === 'turn_right') {
+                    next = 'path'; // Stabilize after turn
+                    segmentsSinceTurn = 0;
+                }
+                // Rule 2: Force turns occasionally to prevent infinite straight lines
+                else if (segmentsSinceTurn > 5 && Math.random() > 0.6) {
+                    // Check if previous was elevation change, if so delay turn
+                    if (last.includes('ramp') || last.includes('steps')) {
+                        next = 'path';
+                    } else {
+                        next = Math.random() > 0.5 ? 'turn_left' : 'turn_right';
+                    }
+                }
+                // Rule 3: Balance difficulty (Oscillate)
+                else {
+                    const r = Math.random();
+                    if (difficulty === 2) {
+                        // After hard, go easy
+                        next = easy[Math.floor(Math.random() * easy.length)];
+                        difficulty = 0;
+                    } else if (difficulty === 1) {
+                        // After medium, can go hard or easy
+                        if (r > 0.5) {
+                            next = hard[Math.floor(Math.random() * hard.length)];
+                            difficulty = 2;
+                        } else {
+                            next = easy[Math.floor(Math.random() * easy.length)];
+                            difficulty = 0;
+                        }
+                    } else {
+                        // After easy, can go medium or turn
+                        if (r > 0.7) {
+                            next = medium[Math.floor(Math.random() * medium.length)];
+                            difficulty = 1;
+                        } else if (r > 0.9 && segmentsSinceTurn > 2) {
+                             next = Math.random() > 0.5 ? 'turn_left' : 'turn_right';
+                        } else {
+                            next = easy[Math.floor(Math.random() * easy.length)];
+                        }
+                    }
+                }
+                
+                // Rule 4: Elevation Control
+                if (next === 'ramp_up' || next === 'steps_up') currentElevation++;
+                if (next === 'ramp_down' || next === 'steps_down') currentElevation--;
+                
+                level.push(next);
+                if(next !== 'turn_left' && next !== 'turn_right') segmentsSinceTurn++;
+            }
+            
+            level.push('finish');
+            return level;
         }
 
         function onWindowResize() {
@@ -1353,6 +1410,7 @@
         let currentPos = { x: -5, y: -0.5, z: 0 };
         let levelMinY = -0.5;
 
+        // Base create functions used by the helper
         function createBox(w, h, d, x, y, z, color, mass=0, rotX=0, rotY=0, rotZ=0) {
             const geo = new THREE.BoxGeometry(w, h, d);
             const mat = new THREE.MeshPhongMaterial({ color });
@@ -1375,9 +1433,8 @@
             mesh.position.set(x, y, z); mesh.rotation.set(rotX, rotY, rotZ);
             mesh.castShadow = true; mesh.receiveShadow = true; scene.add(mesh);
             const shape = new CANNON.Cylinder(radiusTop, radiusBottom, height, segments);
-            // Cannon cylinders are oriented along Z, ThreeJS along Y. We usually need to rotate the shape relative to body
+            // Cannon cylinders are oriented along Z, ThreeJS along Y
             const body = new CANNON.Body({ mass: mass, material: world.defaultMaterial });
-            // Rotate shape to match ThreeJS Y-axis orientation
             const qShape = new CANNON.Quaternion(); qShape.setFromAxisAngle(new CANNON.Vec3(1,0,0), -Math.PI/2);
             body.addShape(shape, new CANNON.Vec3(0,0,0), qShape);
             
@@ -1397,120 +1454,331 @@
             opponents = {};
         }
 
-        function createCheckpointVisual(x, y, z) {
-            const poleGeo = new THREE.CylinderGeometry(0.5, 0.5, 10);
-            const poleMat = new THREE.MeshPhongMaterial({ color: 0x888888 });
-            const pole = new THREE.Mesh(poleGeo, poleMat); pole.position.set(x, y + 5, z - 12); scene.add(pole);
-            const dummyBody = new CANNON.Body({ mass: 0 }); levelObjects.push({ mesh: pole, body: dummyBody });
-            const flagGeo = new THREE.BoxGeometry(4, 3, 0.5);
-            const flagMat = new THREE.MeshPhongMaterial({ color: 0xff0000 }); 
-            const flag = new THREE.Mesh(flagGeo, flagMat); flag.position.set(x + 2, y + 8, z - 12); scene.add(flag);
-            levelObjects.push({ mesh: flag, body: dummyBody }); window.checkpointFlagMat = flagMat;
-        }
-
+        // Modified build logic using rotation
         function buildLevelFromSegments(segments) {
-            currentPos = { x: -5, y: -0.5, z: 0 }; levelMinY = -0.5;
+            currentPos = { x: -5, y: -0.5, z: 0 }; 
+            levelMinY = -0.5;
+            let currentAngle = 0; // 0 = +X, PI/2 = +Z, etc.
+
+            // Helpers for relative placement
+            // localX = distance along path, localZ = distance sideways (right is positive)
+            function transform(localX, localY, localZ, localRotY = 0) {
+                const ca = Math.cos(currentAngle);
+                const sa = Math.sin(currentAngle);
+                
+                // Rotate offset
+                const rx = localX * ca - localZ * sa;
+                const rz = localX * sa + localZ * ca;
+                
+                return {
+                    x: currentPos.x + rx,
+                    y: currentPos.y + localY,
+                    z: currentPos.z + rz,
+                    rotY: localRotY + currentAngle
+                };
+            }
+
+            function addBoxRelative(w, h, d, lx, ly, lz, color, mass=0, lRotX=0, lRotY=0, lRotZ=0) {
+                const t = transform(lx, ly, lz, lRotY);
+                return createBox(w, h, d, t.x, t.y, t.z, color, mass, lRotX, t.rotY, lRotZ);
+            }
+
+            // Special wrapper for ramps that handles the axis swap
+            function addRamp(w, h, d, lx, ly, lz, color, slopeAngle) {
+                const t = transform(lx, ly, lz, 0);
+                // Rotate slope around Z then Y
+                const qSlope = new CANNON.Quaternion();
+                qSlope.setFromAxisAngle(new CANNON.Vec3(0,0,1), slopeAngle);
+                const qTurn = new CANNON.Quaternion();
+                qTurn.setFromAxisAngle(new CANNON.Vec3(0,1,0), currentAngle);
+                const qFinal = qTurn.mult(qSlope);
+                
+                // Create manual object to bypass Euler restrictions of createBox
+                const geo = new THREE.BoxGeometry(w, h, d);
+                const mat = new THREE.MeshPhongMaterial({ color });
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.position.set(t.x, t.y, t.z);
+                mesh.quaternion.copy(qFinal);
+                mesh.castShadow = true; mesh.receiveShadow = true; scene.add(mesh);
+                
+                const shape = new CANNON.Box(new CANNON.Vec3(w/2, h/2, d/2));
+                const body = new CANNON.Body({ mass: 0, material: world.defaultMaterial });
+                body.addShape(shape); body.position.set(t.x, t.y, t.z);
+                body.quaternion.copy(qFinal);
+                world.addBody(body);
+                levelObjects.push({ mesh, body, type: 'static' });
+            }
+
             const midIndex = Math.floor(segments.length / 2);
+
             segments.forEach((seg, index) => {
                 const baseColor = index % 2 === 0 ? 0xdddddd : 0xcccccc;
+                
+                // Checkpoint Logic
                 if (index === midIndex) {
-                    checkpointPos = { x: currentPos.x + 10, y: currentPos.y + 2, z: currentPos.z }; 
-                    createCheckpointVisual(currentPos.x + 10, currentPos.y, currentPos.z);
-                    createBox(25, 1, 25, currentPos.x + 10, currentPos.y - 0.2, currentPos.z, 0x66ff66);
-                }
-                switch(seg) {
-                    case 'start': createBox(15, 1, 20, currentPos.x, currentPos.y, currentPos.z, 0x44cc44); currentPos.x += 15; break;
-                    case 'path': createBox(30, 1, 10, currentPos.x + 15, currentPos.y, currentPos.z, baseColor); currentPos.x += 30; break;
-                    case 'narrow': createBox(20, 1, 2, currentPos.x + 10, currentPos.y, currentPos.z, 0xffaa00); currentPos.x += 20; break;
-                    case 'ramp_up': { const rampLen = 30; const rise = 10; const angle = Math.atan2(rise, rampLen); const hyp = Math.sqrt(rampLen*rampLen + rise*rise); createBox(hyp, 1, 10, currentPos.x + rampLen/2, currentPos.y + rise/2, currentPos.z, 0xff00ff, 0, 0, 0, angle); currentPos.x += rampLen; currentPos.y += rise; break; }
-                    case 'ramp_down': { const rampLenD = 30; const drop = 10; const angleD = -Math.atan2(drop, rampLenD); const hypD = Math.sqrt(rampLenD*rampLenD + drop*drop); createBox(hypD, 1, 10, currentPos.x + rampLenD/2, currentPos.y - drop/2, currentPos.z, 0x00ffff, 0, 0, 0, angleD); currentPos.x += rampLenD; currentPos.y -= drop; break; }
-                    case 'shift_left': createBox(Math.sqrt(800), 1, 10, currentPos.x + 10, currentPos.y, currentPos.z - 10, 0xffff00, 0, 0, -Math.PI/4, 0); currentPos.x += 20; currentPos.z -= 20; break;
-                    case 'shift_right': createBox(Math.sqrt(800), 1, 10, currentPos.x + 10, currentPos.y, currentPos.z + 10, 0xffff00, 0, 0, Math.PI/4, 0); currentPos.x += 20; currentPos.z += 20; break;
-                    case 'walls': createBox(25, 1, 10, currentPos.x + 12.5, currentPos.y, currentPos.z, baseColor); createBox(1, 4, 10, currentPos.x + 8, currentPos.y + 2, currentPos.z, 0x5555ff); createBox(1, 4, 10, currentPos.x + 16, currentPos.y + 2, currentPos.z, 0x5555ff); currentPos.x += 25; break;
-                    case 'hammers': { createBox(25, 1, 10, currentPos.x + 12.5, currentPos.y, currentPos.z, 0x888888); const hX = currentPos.x + 12.5; const hY = currentPos.y; const hZ = currentPos.z; createBox(1, 6, 1, hX, hY + 3, hZ, 0x222222); const hammerHead = createBox(8, 1, 1, hX, hY + 6, hZ, 0xff2222, 10); hammerHead.body.type = CANNON.Body.KINEMATIC; obstacles.push({ ...hammerHead, type: 'spinner', speed: 3 }); currentPos.x += 25; break; }
-                    case 'tilts': { for(let i=0; i<2; i++) { const p = createBox(8, 0.5, 8, currentPos.x + 8 + (i*10), currentPos.y + 0.5, currentPos.z, 0x33aaff, 10); p.body.type = CANNON.Body.KINEMATIC; obstacles.push({ ...p, type: 'tilt', speed: 1.5, offset: i }); } currentPos.x += 25; break; }
-                    case 'split_hammers_walls': { createBox(40, 1, 8, currentPos.x + 20, currentPos.y, currentPos.z - 8, baseColor); const h1 = createBox(8, 1, 1, currentPos.x + 10, currentPos.y + 6, currentPos.z - 8, 0xff2222, 10); h1.body.type = CANNON.Body.KINEMATIC; obstacles.push({ ...h1, type: 'spinner', speed: 4 }); const h2 = createBox(8, 1, 1, currentPos.x + 30, currentPos.y + 6, currentPos.z - 8, 0xff2222, 10); h2.body.type = CANNON.Body.KINEMATIC; obstacles.push({ ...h2, type: 'spinner', speed: -4 }); createBox(40, 1, 8, currentPos.x + 20, currentPos.y, currentPos.z + 8, baseColor); createBox(1, 4, 8, currentPos.x + 10, currentPos.y + 2, currentPos.z + 8, 0x5555ff); createBox(1, 4, 8, currentPos.x + 20, currentPos.y + 2, currentPos.z + 8, 0x5555ff); createBox(1, 4, 8, currentPos.x + 30, currentPos.y + 2, currentPos.z + 8, 0x5555ff); currentPos.x += 40; break; }
-                    case 'split_ramp_tunnel': { const riseH = 8; const angleH = Math.atan2(riseH, 20); const hypH = Math.sqrt(20*20 + riseH*riseH); createBox(hypH, 1, 8, currentPos.x + 10, currentPos.y + riseH/2, currentPos.z - 8, 0xff00ff, 0, 0, 0, angleH); createBox(10, 1, 8, currentPos.x + 25, currentPos.y + riseH, currentPos.z - 8, 0xff00ff); createBox(hypH, 1, 8, currentPos.x + 40, currentPos.y + riseH/2, currentPos.z - 8, 0xff00ff, 0, 0, 0, -angleH); createBox(50, 1, 8, currentPos.x + 25, currentPos.y, currentPos.z + 8, baseColor); createBox(50, 1, 8, currentPos.x + 25, currentPos.y + 5, currentPos.z + 8, 0x555555); currentPos.x += 50; break; }
+                    const ckPos = transform(10, 0, 0); // 10 units forward
+                    checkpointPos = { x: ckPos.x, y: ckPos.y + 2, z: ckPos.z }; 
                     
-                    // --- NEW SEGMENTS ---
+                    // Visuals
+                    const pPos = transform(10, 5, -12); // Pole
+                    const fPos = transform(12, 8, -12); // Flag
+                    
+                    // Pole
+                    const poleGeo = new THREE.CylinderGeometry(0.5, 0.5, 10);
+                    const poleMat = new THREE.MeshPhongMaterial({ color: 0x888888 });
+                    const pole = new THREE.Mesh(poleGeo, poleMat); 
+                    pole.position.set(pPos.x, pPos.y, pPos.z); scene.add(pole);
+                    levelObjects.push({ mesh: pole, body: new CANNON.Body({mass:0}) });
+                    
+                    // Flag
+                    const flagGeo = new THREE.BoxGeometry(4, 3, 0.5);
+                    const flagMat = new THREE.MeshPhongMaterial({ color: 0xff0000 }); 
+                    window.checkpointFlagMat = flagMat;
+                    const flag = new THREE.Mesh(flagGeo, flagMat); 
+                    flag.position.set(fPos.x, fPos.y, fPos.z); 
+                    flag.rotation.y = currentAngle;
+                    scene.add(flag);
+                    levelObjects.push({ mesh: flag, body: new CANNON.Body({mass:0}) });
+
+                    addBoxRelative(25, 1, 25, 10, -0.2, 0, 0x66ff66);
+                }
+
+                switch(seg) {
+                    case 'start': 
+                        addBoxRelative(15, 1, 20, 7.5, 0, 0, 0x44cc44); 
+                        currentPos = transform(15, 0, 0);
+                        break;
+                        
+                    case 'turn_left':
+                        // Landing pad
+                        addBoxRelative(20, 1, 20, 10, 0, 0, baseColor);
+                        // Move cursor to center of pad
+                        currentPos = transform(10, 0, 0);
+                        // Rotate
+                        currentAngle -= Math.PI/2;
+                        // Move cursor out of pad in new direction
+                        currentPos = transform(10, 0, 0);
+                        break;
+
+                    case 'turn_right':
+                        addBoxRelative(20, 1, 20, 10, 0, 0, baseColor);
+                        currentPos = transform(10, 0, 0);
+                        currentAngle += Math.PI/2;
+                        currentPos = transform(10, 0, 0);
+                        break;
+
+                    case 'path': 
+                        addBoxRelative(30, 1, 10, 15, 0, 0, baseColor); 
+                        currentPos = transform(30, 0, 0);
+                        break;
+
+                    case 'narrow': 
+                        // Widened to 4 units for better flow
+                        addBoxRelative(20, 1, 4, 10, 0, 0, 0xffaa00); 
+                        currentPos = transform(20, 0, 0);
+                        break;
+
+                    case 'ramp_up': { 
+                        const rampLen = 30; const rise = 10; 
+                        const angle = Math.atan2(rise, rampLen); 
+                        const hyp = Math.sqrt(rampLen*rampLen + rise*rise); 
+                        addRamp(hyp, 1, 10, rampLen/2, rise/2, 0, 0xff00ff, angle);
+                        currentPos = transform(rampLen, rise, 0);
+                        break; 
+                    }
+                    case 'ramp_down': { 
+                        const rampLenD = 30; const drop = 10; 
+                        const angleD = -Math.atan2(drop, rampLenD); 
+                        const hypD = Math.sqrt(rampLenD*rampLenD + drop*drop); 
+                        addRamp(hypD, 1, 10, rampLenD/2, -drop/2, 0, 0x00ffff, angleD);
+                        currentPos = transform(rampLenD, -drop, 0);
+                        break; 
+                    }
+                    
+                    case 'walls': 
+                        addBoxRelative(25, 1, 10, 12.5, 0, 0, baseColor);
+                        addBoxRelative(1, 4, 10, 8, 2, 0, 0x5555ff);
+                        addBoxRelative(1, 4, 10, 16, 2, 0, 0x5555ff);
+                        currentPos = transform(25, 0, 0);
+                        break;
+
+                    case 'hammers': { 
+                        addBoxRelative(25, 1, 10, 12.5, 0, 0, 0x888888);
+                        // Post
+                        addBoxRelative(1, 6, 1, 12.5, 3, 0, 0x222222);
+                        // Hammer
+                        const t = transform(12.5, 6, 0);
+                        const hammer = createBox(8, 1, 1, t.x, t.y, t.z, 0xff2222, 10, 0, currentAngle, 0);
+                        hammer.body.type = CANNON.Body.KINEMATIC; 
+                        obstacles.push({ ...hammer, type: 'spinner', speed: 3 }); 
+                        currentPos = transform(25, 0, 0);
+                        break; 
+                    }
+
+                    case 'tilts': { 
+                        for(let i=0; i<2; i++) { 
+                            const t = transform(8 + (i*10), 0.5, 0);
+                            const p = createBox(8, 0.5, 8, t.x, t.y, t.z, 0x33aaff, 10, 0, currentAngle, 0); 
+                            p.body.type = CANNON.Body.KINEMATIC; 
+                            // Store level angle for correct tilt axis
+                            obstacles.push({ ...p, type: 'tilt', speed: 1.5, offset: i, levelAngle: currentAngle }); 
+                        } 
+                        currentPos = transform(25, 0, 0);
+                        break; 
+                    }
+
+                    case 'split_hammers_walls': { 
+                        // Safety Hub
+                        addBoxRelative(5, 1, 20, 2.5, 0, 0, baseColor);
+                        
+                        // Left path
+                        addBoxRelative(40, 1, 8, 25, 0, -8, baseColor); // Centered at 25 relative
+                        // Right path
+                        addBoxRelative(40, 1, 8, 25, 0, 8, baseColor);
+                        
+                        // Spinner Left
+                        const t1 = transform(15, 6, -8);
+                        const h1 = createBox(8, 1, 1, t1.x, t1.y, t1.z, 0xff2222, 10, 0, currentAngle, 0);
+                        h1.body.type = CANNON.Body.KINEMATIC;
+                        obstacles.push({ ...h1, type: 'spinner', speed: 4 });
+                        
+                        // Spinner Left 2
+                        const t2 = transform(35, 6, -8);
+                        const h2 = createBox(8, 1, 1, t2.x, t2.y, t2.z, 0xff2222, 10, 0, currentAngle, 0);
+                        h2.body.type = CANNON.Body.KINEMATIC;
+                        obstacles.push({ ...h2, type: 'spinner', speed: -4 });
+
+                        // Walls Right
+                        addBoxRelative(1, 4, 8, 15, 2, 8, 0x5555ff);
+                        addBoxRelative(1, 4, 8, 25, 2, 8, 0x5555ff);
+                        addBoxRelative(1, 4, 8, 35, 2, 8, 0x5555ff);
+                        
+                        currentPos = transform(45, 0, 0);
+                        break; 
+                    }
+
+                    case 'split_ramp_tunnel': { 
+                        // Safety Hub
+                        addBoxRelative(5, 1, 20, 2.5, 0, 0, baseColor);
+                        
+                        // Left Ramp path
+                        const riseH = 8; const angleH = Math.atan2(riseH, 20); const hypH = Math.sqrt(20*20 + riseH*riseH);
+                        // Up
+                        addRamp(hypH, 1, 8, 15, riseH/2, -8, 0xff00ff, angleH);
+                        // Flat
+                        addBoxRelative(10, 1, 8, 30, riseH, -8, 0xff00ff);
+                        // Down
+                        addRamp(hypH, 1, 8, 45, riseH/2, -8, 0xff00ff, -angleH);
+                        
+                        // Right Tunnel path
+                        addBoxRelative(50, 1, 8, 30, 0, 8, baseColor); // Centered at 30
+                        addBoxRelative(50, 1, 8, 30, 5, 8, 0x555555);
+                        
+                        currentPos = transform(55, 0, 0);
+                        break; 
+                    }
+                    
                     case 'rotating_disc': {
-                        // Entry
-                        createBox(5, 1, 10, currentPos.x + 2.5, currentPos.y, currentPos.z, baseColor);
-                        // The Disc
-                        const disc = createCylinder(12, 12, 1, currentPos.x + 15, currentPos.y, currentPos.z, 0xffaa00, 100);
+                        addBoxRelative(5, 1, 10, 2.5, 0, 0, baseColor);
+                        // Disc
+                        const t = transform(15, 0, 0);
+                        const disc = createCylinder(12, 12, 1, t.x, t.y, t.z, 0xffaa00, 100);
                         disc.body.type = CANNON.Body.KINEMATIC;
                         obstacles.push({ ...disc, type: 'rotating_disc', speed: 3.5 });
-                        // Exit
-                        createBox(5, 1, 10, currentPos.x + 27.5, currentPos.y, currentPos.z, baseColor);
-                        currentPos.x += 30; 
+                        
+                        addBoxRelative(5, 1, 10, 27.5, 0, 0, baseColor);
+                        currentPos = transform(30, 0, 0);
                         break;
                     }
+
                     case 'moving_platforms': {
-                        // Gap crossing
-                        const startX = currentPos.x;
+                        const startLocX = 8; // Closer start
                         for(let i=0; i<3; i++) {
-                            const p = createBox(8, 1, 8, startX + 10 + (i * 12), currentPos.y, currentPos.z, 0xff8800, 100);
+                            const lx = startLocX + (i * 12);
+                            const t = transform(lx, 0, 0);
+                            const p = createBox(8, 1, 8, t.x, t.y, t.z, 0xff8800, 100, 0, currentAngle, 0);
                             p.body.type = CANNON.Body.KINEMATIC;
-                            // Add initialPos to track center
-                            obstacles.push({ ...p, type: 'moving_platform', speed: 2, offset: i * 2, initialPos: {x: startX + 10 + (i * 12), y: currentPos.y, z: currentPos.z} });
+                            // Pass angle so we know which way is "side"
+                            obstacles.push({ ...p, type: 'moving_platform', speed: 2, offset: i * 2, initialPos: {x: t.x, y: t.y, z: t.z}, levelAngle: currentAngle });
                         }
-                        currentPos.x += 46; 
+                        currentPos = transform(44, 0, 0);
                         break;
                     }
+
                     case 'steps_up': {
                         for(let i=0; i<4; i++) {
-                            createBox(5, 1 + i, 10, currentPos.x + 2.5, currentPos.y + (i * 0.5), currentPos.z, 0x444444);
-                            currentPos.x += 5;
+                            addBoxRelative(5, 1 + i, 10, 2.5 + (i*5), (i * 0.5), 0, 0x444444);
                         }
-                        currentPos.y += 2.0; 
+                        currentPos = transform(20, 2.0, 0);
                         break;
                     }
+
                     case 'steps_down': {
                         for(let i=0; i<4; i++) {
-                            createBox(5, 4 - i, 10, currentPos.x + 2.5, currentPos.y - (i * 0.5) - 0.5, currentPos.z, 0x444444);
-                            currentPos.x += 5;
+                            // Target tops: -0.5, -1.0, -1.5, -2.0 relative to start floor (0.0)
+                            const y = -(i+1)*0.5 - 2.0;
+                            addBoxRelative(5, 4, 10, 2.5 + (i*5), y, 0, 0x444444);
                         }
-                        currentPos.y -= 2.0;
+                        currentPos = transform(20, -2.0, 0);
                         break;
                     }
+
                     case 'low_spinners': {
-                         createBox(30, 1, 10, currentPos.x + 15, currentPos.y, currentPos.z, 0x888888);
+                         addBoxRelative(30, 1, 10, 15, 0, 0, 0x888888);
                          for(let i=0; i<2; i++) {
-                            const centerObj = createBox(1, 0.5, 1, currentPos.x + 10 + (i*10), currentPos.y + 0.5, currentPos.z, 0x222222);
-                            const bar = createBox(8, 0.5, 0.5, currentPos.x + 10 + (i*10), currentPos.y + 0.75, currentPos.z, 0xff0000, 10);
+                            const lx = 10 + (i*10);
+                            addBoxRelative(1, 0.5, 1, lx, 0.5, 0, 0x222222);
+                            const t = transform(lx, 0.75, 0);
+                            const bar = createBox(8, 0.5, 0.5, t.x, t.y, t.z, 0xff0000, 10, 0, currentAngle, 0);
                             bar.body.type = CANNON.Body.KINEMATIC;
                             obstacles.push({ ...bar, type: 'spinner', speed: 15 });
                          }
-                         currentPos.x += 30;
+                         currentPos = transform(30, 0, 0);
                          break;
                     }
+
                     case 'arch_jump': {
-                        createBox(10, 1, 10, currentPos.x + 5, currentPos.y, currentPos.z, baseColor);
-                        // The Arch/Ring
-                        const ringColor = 0xffff00;
-                        createBox(1, 10, 1, currentPos.x + 15, currentPos.y + 5, currentPos.z - 4, ringColor);
-                        createBox(1, 10, 1, currentPos.x + 15, currentPos.y + 5, currentPos.z + 4, ringColor);
-                        createBox(1, 1, 9, currentPos.x + 15, currentPos.y + 10, currentPos.z, ringColor);
-                        // Landing
-                        createBox(10, 1, 10, currentPos.x + 25, currentPos.y, currentPos.z, baseColor);
-                        currentPos.x += 30;
+                        addBoxRelative(10, 1, 10, 5, 0, 0, baseColor);
+                        // Ring
+                        addBoxRelative(1, 10, 1, 15, 5, -4, 0xffff00);
+                        addBoxRelative(1, 10, 1, 15, 5, 4, 0xffff00);
+                        addBoxRelative(1, 1, 9, 15, 10, 0, 0xffff00);
+                        
+                        addBoxRelative(10, 1, 10, 25, 0, 0, baseColor);
+                        currentPos = transform(30, 0, 0);
                         break;
                     }
+
                     case 'punch_wall': {
-                        createBox(20, 1, 12, currentPos.x + 10, currentPos.y, currentPos.z, baseColor);
-                        // Wall
-                        createBox(20, 5, 2, currentPos.x + 10, currentPos.y + 3, currentPos.z - 5, 0x5555ff);
+                        addBoxRelative(20, 1, 12, 10, 0, 0, baseColor);
+                        // Wall (at back edge? z-5 relative)
+                        addBoxRelative(20, 5, 2, 10, 3, -5, 0x5555ff);
                         // Pistons
                         for(let i=0; i<3; i++) {
-                            const p = createBox(2, 2, 4, currentPos.x + 5 + (i*5), currentPos.y + 2, currentPos.z - 4, 0xff0000, 100);
+                            const lx = 5 + (i*5);
+                            const t = transform(lx, 2, -4);
+                            const p = createBox(2, 2, 4, t.x, t.y, t.z, 0xff0000, 100, 0, currentAngle, 0);
                             p.body.type = CANNON.Body.KINEMATIC;
-                            obstacles.push({ ...p, type: 'puncher', speed: 3, offset: i, initialPos: {x: currentPos.x + 5 + (i*5), y: currentPos.y + 2, z: currentPos.z - 4} });
+                            obstacles.push({ ...p, type: 'puncher', speed: 3, offset: i, initialPos: {x: t.x, y: t.y, z: t.z}, levelAngle: currentAngle });
                         }
-                        currentPos.x += 20;
+                        currentPos = transform(20, 0, 0);
                         break;
                     }
                     
-                    case 'finish': { finishLineX = currentPos.x; createBox(20, 1, 20, currentPos.x + 10, currentPos.y, currentPos.z, 0xffd700); const arch = createBox(2, 8, 10, currentPos.x, currentPos.y + 4.5, currentPos.z, 0xffd700); arch.mesh.material.transparent = true; arch.mesh.material.opacity = 0.5; arch.body.collisionFilterGroup = 0; break; }
+                    case 'finish': { 
+                        finishLinePos.copy(currentPos); // Approximate check
+                        addBoxRelative(20, 1, 20, 10, 0, 0, 0xffd700);
+                        // Arch
+                        const t = transform(0, 4.5, 0); // Arch at start of pad
+                        const arch = createBox(2, 8, 10, t.x, t.y, t.z, 0xffd700, 0, 0, currentAngle, 0);
+                        arch.mesh.material.transparent = true; 
+                        arch.mesh.material.opacity = 0.5; 
+                        arch.body.collisionFilterGroup = 0; 
+                        
+                        // Set physics check to be plane collision or distance check
+                        finishLinePos.set(t.x, t.y, t.z);
+                        break; 
+                    }
                 }
                 if(currentPos.y < levelMinY) levelMinY = currentPos.y;
             });
@@ -1695,55 +1963,67 @@
             }
             const time = Date.now() * 0.001;
             
-            // --- UPDATED OBSTACLE LOGIC ---
+            // --- UPDATED OBSTACLE LOGIC FOR ROTATED WORLDS ---
             obstacles.forEach(obs => {
                 if(obs.type === 'spinner') {
-                    // Update visual/kinematic position
+                    // Y-axis rotation is safe regardless of world rotation
                     obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), time * obs.speed);
-                    // CRITICAL: Set angular velocity so physics engine calculates impact
                     obs.body.angularVelocity.set(0, obs.speed, 0); 
                 }
                 else if(obs.type === 'tilt') {
-                    // Calculate angle and angular velocity
-                    const angle = Math.sin(time * obs.speed + obs.offset) * 0.5;
-                    obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), angle);
+                    // Tilt needs to respect level angle. 
+                    // Forward vector based on stored levelAngle
+                    const ax = Math.cos(obs.levelAngle);
+                    const az = Math.sin(obs.levelAngle);
+                    const forward = new CANNON.Vec3(ax, 0, az);
                     
-                    // derivative of sin(wt + off)*A is A*w*cos(wt + off)
-                    const omegaX = 0.5 * obs.speed * Math.cos(time * obs.speed + obs.offset);
-                    obs.body.angularVelocity.set(omegaX, 0, 0);
+                    const angle = Math.sin(time * obs.speed + obs.offset) * 0.5;
+                    obs.body.quaternion.setFromAxisAngle(forward, angle);
+                    
+                    const omega = 0.5 * obs.speed * Math.cos(time * obs.speed + obs.offset);
+                    obs.body.angularVelocity.set(forward.x * omega, 0, forward.z * omega);
                 }
                 else if (obs.type === 'rotating_disc') {
                     obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), time * obs.speed);
-                    // CRITICAL: Set angular velocity so character rotates with disc via friction
                     obs.body.angularVelocity.set(0, obs.speed, 0);
                 }
                 else if (obs.type === 'moving_platform') {
-                    const zOffset = Math.sin(time * obs.speed + obs.offset) * 8;
-                    obs.body.position.set(obs.initialPos.x, obs.initialPos.y, obs.initialPos.z + zOffset);
+                    // Move perpendicular to level direction (side to side)
+                    // Side vector is (-sin, 0, cos) relative to levelAngle
+                    const sx = -Math.sin(obs.levelAngle);
+                    const sz = Math.cos(obs.levelAngle);
                     
-                    // Set linear velocity for friction to work
-                    const vz = 8 * obs.speed * Math.cos(time * obs.speed + obs.offset);
-                    obs.body.velocity.set(0, 0, vz);
+                    const offset = Math.sin(time * obs.speed + obs.offset) * 8;
+                    
+                    obs.body.position.set(
+                        obs.initialPos.x + sx * offset, 
+                        obs.initialPos.y, 
+                        obs.initialPos.z + sz * offset
+                    );
+                    
+                    // Velocity for friction
+                    const vMag = 8 * obs.speed * Math.cos(time * obs.speed + obs.offset);
+                    obs.body.velocity.set(sx * vMag, 0, sz * vMag);
                 }
                 else if (obs.type === 'puncher') {
-                     // Puncher logic uses abs() which makes velocity discontinuous, but let's try.
-                     // The visual logic was: zOffset = Math.sin(...) * 3; position = initial + abs(zOffset).
-                     // This is a bit complex for simple velocity derivation because of the Abs.
-                     // Let's just calculate delta from last frame if possible, or simplified math.
-                     // A simple puncher is just sin, the abs makes it bounce. 
-                     // Let's stick to position update for puncher for now, or approximate. 
-                     // Actually, user didn't complain about puncher. Focus on Disc/Spinner.
-                     const zOffset = Math.sin(time * obs.speed + obs.offset) * 3;
-                     obs.body.position.set(obs.initialPos.x, obs.initialPos.y, obs.initialPos.z + Math.abs(zOffset));
+                     // Puncher moves sideways (relative to its own wall, which is side-facing).
+                     // Actually logic in buildLevel: piston is at z-4 relative.
+                     // It moves "forward/back" relative to the wall face.
+                     // Local Z motion relative to level.
+                     const sx = -Math.sin(obs.levelAngle);
+                     const sz = Math.cos(obs.levelAngle);
                      
-                     // Approximate velocity for impact
-                     // If zOffset is positive, vel is cos.. if negative, vel is -cos (because of Abs reflection).
-                     const rawVel = 3 * obs.speed * Math.cos(time * obs.speed + obs.offset);
-                     const direction = zOffset >= 0 ? 1 : -1; // roughly
-                     // This is tricky because zOffset is oscillating -3 to 3, abs makes it 0 to 3.
-                     // The velocity flips when zOffset crosses 0.
-                     // Let's just leave puncher velocity alone to avoid glitches, or do simple finite difference?
-                     // Finite difference is safer for weird movement functions.
+                     // abs(sin) for bounce effect
+                     const pOffset = Math.sin(time * obs.speed + obs.offset) * 3;
+                     // We add abs(offset) to push out
+                     const dist = Math.abs(pOffset);
+                     
+                     // Move along side vector
+                     obs.body.position.set(
+                        obs.initialPos.x + sx * dist,
+                        obs.initialPos.y,
+                        obs.initialPos.z + sz * dist
+                     );
                 }
 
                 obs.mesh.position.copy(obs.body.position); 
@@ -1754,16 +2034,23 @@
                 if(playerBody && playerBody.position.y < levelMinY - 30) {
                     playerBody.position.set(currentRespawnPos.x, currentRespawnPos.y, currentRespawnPos.z);
                     playerBody.velocity.set(0, 0, 0); 
-                    if(gameActive) { playerMomentum = 30; } // Commentary removed here
+                    if(gameActive) { playerMomentum = 30; } 
                 }
             }
             if(gameActive) {
-                if(checkpointPos && !checkpointActivated && playerBody.position.x > checkpointPos.x) {
-                    checkpointActivated = true; currentRespawnPos = { x: checkpointPos.x, y: checkpointPos.y + 10, z: checkpointPos.z };
-                    if(window.checkpointFlagMat) window.checkpointFlagMat.color.setHex(0x00ff00);
-                    playTone(880, 0.1, 'sine', 0.2); setTimeout(() => playTone(1100, 0.2, 'sine', 0.2), 100);
-                    // Commentary removed
+                // Checkpoint check needs to happen using Distance now, since X isn't always increasing
+                if(checkpointPos && !checkpointActivated) {
+                    // Check dist < 10
+                    const dx = playerBody.position.x - checkpointPos.x;
+                    const dz = playerBody.position.z - checkpointPos.z;
+                    if(Math.sqrt(dx*dx + dz*dz) < 15) {
+                        checkpointActivated = true; 
+                        currentRespawnPos = { x: checkpointPos.x, y: checkpointPos.y + 10, z: checkpointPos.z };
+                        if(window.checkpointFlagMat) window.checkpointFlagMat.color.setHex(0x00ff00);
+                        playTone(880, 0.1, 'sine', 0.2); setTimeout(() => playTone(1100, 0.2, 'sine', 0.2), 100);
+                    }
                 }
+                
                 for (const uid in window.opponentsData) {
                     const data = window.opponentsData[uid]; if(uid === myId) continue; 
                     if (!opponents[uid]) {
@@ -1818,18 +2105,43 @@
         }
         
         function checkFinish() {
-            if(!hasFinished && playerBody.position.x > finishLineX) {
-                hasFinished = true; 
-                window.hasFinished = true; 
-                playSoundEffect('finish');
-                showEndScreen(); 
-                // Commentary removed
+            // Updated to check distance to finish arch because we might approach from any angle
+            if(!hasFinished) {
+                const dist = playerBody.position.distanceTo(finishLinePos);
+                if(dist < 5) {
+                    hasFinished = true; 
+                    window.hasFinished = true; 
+                    playSoundEffect('finish');
+                    showEndScreen(); 
+                }
             }
             
-            let myX = playerBody.position.x; 
+            // Rank calculation is tricky on a non-linear map without pathfinding.
+            // Simplified: "Distance from start" isn't enough because path winds.
+            // We can check "Distance to finish"?
+            // If we know finishLinePos, rank is sorted by distance to finish (ascending).
+            
+            let myDist = playerBody.position.distanceTo(finishLinePos);
             let countAhead = 0;
+            
+            // Check opponents
             for(const uid in window.opponentsData) { 
-                if(window.opponentsData[uid].x > myX) countAhead++; 
+                const p = window.opponentsData[uid];
+                // Simple distance check
+                const pDist = Math.sqrt(
+                    Math.pow(p.x - finishLinePos.x, 2) + 
+                    Math.pow(p.y - finishLinePos.y, 2) + 
+                    Math.pow(p.z - finishLinePos.z, 2)
+                );
+                
+                if (p.finished) {
+                    // If they finished and I haven't, they are ahead.
+                    if (!hasFinished) countAhead++;
+                    // If we both finished, we need finish times, but we don't track that yet.
+                    // Assume they are ahead if they finished.
+                } else if (!hasFinished && pDist < myDist) {
+                    countAhead++;
+                }
             }
             document.getElementById('rank').innerText = `Rank: ${countAhead + 1}`;
         }
@@ -1847,9 +2159,12 @@
             controlsDiv.innerHTML = '';
             
             let allPlayers = [];
+            // Calc current distances for end screen
+            const finishPos = finishLinePos;
+            
             if (window.playerBody) allPlayers.push({ 
                 username: myUsername + " (You)", 
-                x: window.playerBody.position.x, 
+                dist: window.playerBody.position.distanceTo(finishPos), 
                 finished: window.hasFinished, 
                 isLocal: true 
             });
@@ -1857,9 +2172,10 @@
             for (const uid in window.opponentsData) {
                 const p = window.opponentsData[uid]; 
                 if(uid === myId) continue;
+                const pDist = Math.sqrt(Math.pow(p.x - finishPos.x, 2) + Math.pow(p.z - finishPos.z, 2));
                 allPlayers.push({ 
                     username: p.username, 
-                    x: p.x, 
+                    dist: pDist, 
                     finished: p.finished, 
                     isLocal: false 
                 });
@@ -1868,7 +2184,7 @@
             allPlayers.sort((a, b) => { 
                 if (a.finished && !b.finished) return -1; 
                 if (!a.finished && b.finished) return 1; 
-                return b.x - a.x; 
+                return a.dist - b.dist; // Lower distance is better
             });
             
             allPlayers.forEach((p, index) => {
@@ -1876,7 +2192,7 @@
                 row.className = 'leaderboard-row';
                 row.style.color = p.isLocal ? '#ffff00' : 'white'; 
                 row.style.fontWeight = p.isLocal ? 'bold' : 'normal';
-                const status = p.finished ? '<span style="color:#44cc44">FINISHED</span>' : Math.floor(p.x) + 'm';
+                const status = p.finished ? '<span style="color:#44cc44">FINISHED</span>' : Math.floor(p.dist) + 'm left';
                 row.innerHTML = `<span>#${index+1} ${p.username}</span><span>${status}</span>`;
                 leaderboardDiv.appendChild(row);
             });
