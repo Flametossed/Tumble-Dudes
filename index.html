@@ -440,13 +440,14 @@
         // Sound effect cooldowns
         let lastCollisionSound = 0;
 
-        // Fixed timestep for consistent physics - locked to 60 FPS rendering
-        let lastRenderTime = performance.now(); // For 60 FPS frame rate locking
+        // Fixed timestep for consistent physics with interpolation for any display refresh rate
         let lastPhysicsTime = performance.now(); // For tracking actual elapsed time for physics
         let accumulator = 0;
         const fixedTimeStep = 1/60; // 60 FPS physics
-        const targetFrameTime = 1000/60; // 60 FPS target (16.67ms per frame)
         const CAMERA_SMOOTHING_BASE = 0.9; // Base value for time-based camera lerp smoothing
+        // Previous-state storage for physics interpolation
+        let prevPlayerPos = { x: 0, y: 0, z: 0 };
+        let prevObstacleStates = [];
 
         // --- COMMENTARY PHRASES ---
         const COMMENTARY = {
@@ -1326,7 +1327,7 @@
 
         window.clearLevel = function() {
             levelObjects.forEach(obj => { scene.remove(obj.mesh); world.removeBody(obj.body); });
-            levelObjects = []; obstacles = []; currentPos = { x: -5, y: -0.5, z: 0 }; levelMinY = -0.5;
+            levelObjects = []; obstacles = []; prevObstacleStates = []; currentPos = { x: -5, y: -0.5, z: 0 }; levelMinY = -0.5;
             currentRespawnPos = { x: -5, y: 5, z: 0 }; checkpointPos = null; checkpointActivated = false; window.checkpointFlagMat = null;
             if(player) { scene.remove(player.mesh); world.removeBody(player.body); player = null; window.playerBody = null; window.playerMesh = null; }
             for(let uid in opponents) { scene.remove(opponents[uid].mesh); }
@@ -1719,15 +1720,6 @@
             
             const currentTime = performance.now();
             
-            // Lock rendering to 60 FPS for better compatibility
-            const timeSinceLastRender = currentTime - lastRenderTime;
-            if (timeSinceLastRender < targetFrameTime) {
-                return; // Skip rendering if not enough time has passed
-            }
-            
-            // Reset render time to current
-            lastRenderTime = currentTime;
-            
             // Calculate actual time elapsed for physics
             const deltaTime = (currentTime - lastPhysicsTime) / 1000; // Convert to seconds
             lastPhysicsTime = currentTime;
@@ -1736,21 +1728,68 @@
             const clampedDelta = Math.min(deltaTime, 0.1);
             accumulator += clampedDelta;
             
-            // Update physics in fixed timesteps
+            // Update physics in fixed timesteps, storing previous state for interpolation
             while (accumulator >= fixedTimeStep) {
+                if (playerBody) {
+                    prevPlayerPos.x = playerBody.position.x;
+                    prevPlayerPos.y = playerBody.position.y;
+                    prevPlayerPos.z = playerBody.position.z;
+                }
+                obstacles.forEach((obs, i) => {
+                    if (!prevObstacleStates[i]) {
+                        prevObstacleStates[i] = { px:0, py:0, pz:0, qx:0, qy:0, qz:0, qw:1 };
+                    }
+                    const s = prevObstacleStates[i];
+                    s.px = obs.body.position.x; s.py = obs.body.position.y; s.pz = obs.body.position.z;
+                    s.qx = obs.body.quaternion.x; s.qy = obs.body.quaternion.y;
+                    s.qz = obs.body.quaternion.z; s.qw = obs.body.quaternion.w;
+                });
                 updatePhysics();
                 accumulator -= fixedTimeStep;
             }
             
+            // Interpolation factor for smooth rendering between physics steps
+            const alpha = accumulator / fixedTimeStep;
+            
+            // Interpolate obstacle visuals between previous and current physics state
+            obstacles.forEach((obs, i) => {
+                if (prevObstacleStates[i]) {
+                    const prev = prevObstacleStates[i];
+                    obs.mesh.position.set(
+                        prev.px + (obs.body.position.x - prev.px) * alpha,
+                        prev.py + (obs.body.position.y - prev.py) * alpha,
+                        prev.pz + (obs.body.position.z - prev.pz) * alpha
+                    );
+                    obs.mesh.quaternion.set(
+                        prev.qx + (obs.body.quaternion.x - prev.qx) * alpha,
+                        prev.qy + (obs.body.quaternion.y - prev.qy) * alpha,
+                        prev.qz + (obs.body.quaternion.z - prev.qz) * alpha,
+                        prev.qw + (obs.body.quaternion.w - prev.qw) * alpha
+                    ).normalize();
+                }
+            });
+            
+            // Interpolate player mesh position
+            if (player) {
+                player.mesh.position.set(
+                    prevPlayerPos.x + (player.body.position.x - prevPlayerPos.x) * alpha,
+                    prevPlayerPos.y + (player.body.position.y - prevPlayerPos.y) * alpha - 0.1,
+                    prevPlayerPos.z + (player.body.position.z - prevPlayerPos.z) * alpha
+                );
+            }
+            
             if(playerBody) {
-                const targetPos = playerBody.position; 
+                // Use interpolated position for camera target
+                const targetX = prevPlayerPos.x + (playerBody.position.x - prevPlayerPos.x) * alpha;
+                const targetY = prevPlayerPos.y + (playerBody.position.y - prevPlayerPos.y) * alpha;
+                const targetZ = prevPlayerPos.z + (playerBody.position.z - prevPlayerPos.z) * alpha;
                 const radius = 14; 
                 const camHeight = 10;
-                const camX = targetPos.x - radius * Math.cos(cameraAngle); 
-                const camZ = targetPos.z - radius * Math.sin(cameraAngle);
+                const camX = targetX - radius * Math.cos(cameraAngle); 
+                const camZ = targetZ - radius * Math.sin(cameraAngle);
                 // Time-based camera smoothing for consistent movement
                 const lerpFactor = 1 - Math.pow(CAMERA_SMOOTHING_BASE, clampedDelta * 60);
-                camera.position.lerp(new THREE.Vector3(camX, targetPos.y + camHeight, camZ), lerpFactor);
+                camera.position.lerp(new THREE.Vector3(camX, targetY + camHeight, camZ), lerpFactor);
                 // Derive lookAt from the smoothed camera position to prevent jitter
                 camera.lookAt(camera.position.x + radius * Math.cos(cameraAngle), camera.position.y - camHeight + 2, camera.position.z + radius * Math.sin(cameraAngle));
             }
