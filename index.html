@@ -1751,7 +1751,8 @@
                 // Time-based camera smoothing for consistent movement
                 const lerpFactor = 1 - Math.pow(CAMERA_SMOOTHING_BASE, clampedDelta * 60);
                 camera.position.lerp(new THREE.Vector3(camX, targetPos.y + camHeight, camZ), lerpFactor);
-                camera.lookAt(targetPos.x, targetPos.y + 2, targetPos.z);
+                // Derive lookAt from the smoothed camera position to prevent jitter
+                camera.lookAt(camera.position.x + radius * Math.cos(cameraAngle), camera.position.y - camHeight + 2, camera.position.z + radius * Math.sin(cameraAngle));
             }
             
             // Make name sprites face camera
