@@ -1327,75 +1327,116 @@
             const skybox = new THREE.Mesh(geo, mat); scene.add(skybox); backgroundObjects.push(skybox);
         }
 
-        // --- NEW SMART GENERATOR LOGIC ---
+        // --- LEVEL THEME SYSTEM ---
+        const LEVEL_THEMES = [
+            { name: 'neon',    primary: 0xff00ff, secondary: 0x00ffff, accent: 0xffff00, floor1: 0x222244, floor2: 0x1a1a3a, wall: 0x8800ff },
+            { name: 'lava',    primary: 0xff4400, secondary: 0xff8800, accent: 0xffcc00, floor1: 0x553333, floor2: 0x442222, wall: 0xcc2200 },
+            { name: 'ice',     primary: 0x66ccff, secondary: 0xaaeeff, accent: 0xffffff, floor1: 0xbbddee, floor2: 0x99ccdd, wall: 0x4488aa },
+            { name: 'jungle',  primary: 0x22cc44, secondary: 0x88ee44, accent: 0xddaa33, floor1: 0x445533, floor2: 0x334422, wall: 0x226622 },
+            { name: 'cyber',   primary: 0x00ff88, secondary: 0xff0088, accent: 0x00aaff, floor1: 0x111111, floor2: 0x1a1a1a, wall: 0x00cc66 },
+            { name: 'candy',   primary: 0xff66aa, secondary: 0x66ffcc, accent: 0xffee44, floor1: 0xffccdd, floor2: 0xeebbcc, wall: 0xff4488 },
+            { name: 'desert',  primary: 0xddaa44, secondary: 0xcc8833, accent: 0xff6622, floor1: 0xccbb88, floor2: 0xbbaa77, wall: 0xaa7733 },
+            { name: 'space',   primary: 0x6644ff, secondary: 0x44aaff, accent: 0xff44ff, floor1: 0x222233, floor2: 0x191928, wall: 0x5533cc }
+        ];
+
+        // --- REWORKED SMART GENERATOR LOGIC ---
         window.generateRandomLevelStructure = function() {
-            const easy = ['path', 'walls', 'arch_jump'];
-            const medium = ['narrow', 'tilts', 'steps_up', 'steps_down', 'ramp_up', 'ramp_down'];
-            const hard = ['hammers', 'split_hammers_walls', 'split_ramp_tunnel', 'rotating_disc', 'moving_platforms', 'low_spinners', 'punch_wall'];
-            
+            const easy = ['path', 'walls', 'arch_jump', 'gap_jump', 'zigzag'];
+            const medium = ['narrow', 'tilts', 'steps_up', 'steps_down', 'ramp_up', 'ramp_down', 'floating_islands', 'pillars', 's_curve', 'drop_ledges'];
+            const hard = ['hammers', 'split_hammers_walls', 'split_ramp_tunnel', 'rotating_disc', 'moving_platforms', 'low_spinners', 'punch_wall', 'wave_platforms', 'bumper_alley'];
+
+            // Pick a random theme for this level
+            const theme = LEVEL_THEMES[Math.floor(Math.random() * LEVEL_THEMES.length)];
+
             const level = ['start'];
-            let difficulty = 0; // 0=easy, 1=med, 2=hard
             let segmentsSinceTurn = 0;
-            let currentElevation = 0; // rough tracking
-            
-            const totalLength = 30 + Math.floor(Math.random() * 10);
-            
-            for(let i=0; i<totalLength; i++) {
-                const last = level[level.length-1];
-                let next = 'path';
-                
-                // Rule 1: Always buffer turns
-                if (last === 'turn_left' || last === 'turn_right') {
-                    next = 'path'; // Stabilize after turn
+            let currentElevation = 0;
+            let lastSegType = 'start';
+            const usedRecently = [];
+
+            // Level is divided into zones for variety
+            const zoneCount = 3 + Math.floor(Math.random() * 3); // 3-5 zones
+            const segmentsPerZone = 5 + Math.floor(Math.random() * 5); // 5-9 per zone
+
+            for (let zone = 0; zone < zoneCount; zone++) {
+                // Each zone has a rising difficulty curve
+                const zoneDifficulty = zone / Math.max(zoneCount - 1, 1); // 0..1
+
+                // Add a turn between zones (except before first zone)
+                if (zone > 0) {
+                    // Only add zone transition turn if the previous segment wasn't a turn
+                    if (!lastSegType.includes('turn')) {
+                        const turnDir = zone % 2 === 0 ? 'turn_left' : 'turn_right';
+                        level.push(turnDir);
+                    }
+                    level.push('path');
                     segmentsSinceTurn = 0;
+                    lastSegType = 'path';
+                    usedRecently.length = 0;
                 }
-                // Rule 2: Force turns occasionally to prevent infinite straight lines
-                else if (segmentsSinceTurn > 5 && Math.random() > 0.6) {
-                    // Check if previous was elevation change, if so delay turn
-                    if (last.includes('ramp') || last.includes('steps')) {
-                        next = 'path';
-                    } else {
+
+                for (let s = 0; s < segmentsPerZone; s++) {
+                    const progress = s / segmentsPerZone; // 0..1 within zone
+                    let next = 'path';
+
+                    // Force turn after 4-6 straight segments (but never consecutive turns)
+                    const turnThreshold = 4 + Math.floor(Math.random() * 3);
+                    if (segmentsSinceTurn >= turnThreshold && !lastSegType.includes('ramp') && !lastSegType.includes('steps') && !lastSegType.includes('turn')) {
                         next = Math.random() > 0.5 ? 'turn_left' : 'turn_right';
                     }
-                }
-                // Rule 3: Balance difficulty (Oscillate)
-                else {
-                    const r = Math.random();
-                    if (difficulty === 2) {
-                        // After hard, go easy
-                        next = easy[Math.floor(Math.random() * easy.length)];
-                        difficulty = 0;
-                    } else if (difficulty === 1) {
-                        // After medium, can go hard or easy
-                        if (r > 0.5) {
-                            next = hard[Math.floor(Math.random() * hard.length)];
-                            difficulty = 2;
-                        } else {
-                            next = easy[Math.floor(Math.random() * easy.length)];
-                            difficulty = 0;
-                        }
-                    } else {
-                        // After easy, can go medium or turn
-                        if (r > 0.7) {
-                            next = medium[Math.floor(Math.random() * medium.length)];
-                            difficulty = 1;
-                        } else if (r > 0.9 && segmentsSinceTurn > 2) {
-                             next = Math.random() > 0.5 ? 'turn_left' : 'turn_right';
-                        } else {
-                            next = easy[Math.floor(Math.random() * easy.length)];
-                        }
+                    // After a turn, always place a path buffer
+                    else if (lastSegType === 'turn_left' || lastSegType === 'turn_right') {
+                        next = 'path';
+                        segmentsSinceTurn = 0;
                     }
+                    else {
+                        // Pick difficulty tier based on zone progress
+                        const effectiveDiff = zoneDifficulty * 0.5 + progress * 0.5;
+                        const r = Math.random();
+                        let pool;
+
+                        if (effectiveDiff < 0.33) {
+                            pool = r < 0.3 ? medium : easy;
+                        } else if (effectiveDiff < 0.66) {
+                            pool = r < 0.4 ? hard : (r < 0.7 ? medium : easy);
+                        } else {
+                            pool = r < 0.5 ? hard : (r < 0.8 ? medium : easy);
+                        }
+
+                        // Pick from pool, avoid repeats of last 3 segments
+                        let attempts = 0;
+                        do {
+                            next = pool[Math.floor(Math.random() * pool.length)];
+                            attempts++;
+                        } while (usedRecently.includes(next) && attempts < 10);
+                    }
+
+                    // Elevation control: don't go too high or too low
+                    if ((next === 'ramp_up' || next === 'steps_up') && currentElevation >= 3) {
+                        next = (Math.random() > 0.5) ? 'ramp_down' : 'steps_down';
+                    }
+                    if ((next === 'ramp_down' || next === 'steps_down' || next === 'drop_ledges') && currentElevation <= -2) {
+                        next = (Math.random() > 0.5) ? 'ramp_up' : 'steps_up';
+                    }
+                    if (next === 'ramp_up' || next === 'steps_up') currentElevation++;
+                    if (next === 'ramp_down' || next === 'steps_down' || next === 'drop_ledges') currentElevation--;
+
+                    level.push(next);
+                    lastSegType = next;
+                    usedRecently.push(next);
+                    if (usedRecently.length > 3) usedRecently.shift();
+                    if (next !== 'turn_left' && next !== 'turn_right') segmentsSinceTurn++;
+                    else segmentsSinceTurn = 0;
                 }
-                
-                // Rule 4: Elevation Control
-                if (next === 'ramp_up' || next === 'steps_up') currentElevation++;
-                if (next === 'ramp_down' || next === 'steps_down') currentElevation--;
-                
-                level.push(next);
-                if(next !== 'turn_left' && next !== 'turn_right') segmentsSinceTurn++;
             }
-            
+
+            // Bring elevation back to roughly 0 before finish
+            while (currentElevation > 1) { level.push('ramp_down'); currentElevation--; }
+            while (currentElevation < -1) { level.push('ramp_up'); currentElevation++; }
+
             level.push('finish');
+            // Attach theme data to the array for buildLevelFromSegments to use
+            level.theme = theme;
             return level;
         }
 
@@ -1511,8 +1552,11 @@
 
             const midIndex = Math.floor(segments.length / 2);
 
+            // Resolve theme: use attached theme or pick a random one
+            const theme = segments.theme || LEVEL_THEMES[Math.floor(Math.random() * LEVEL_THEMES.length)];
+
             segments.forEach((seg, index) => {
-                const baseColor = index % 2 === 0 ? 0xdddddd : 0xcccccc;
+                const baseColor = index % 2 === 0 ? theme.floor1 : theme.floor2;
                 
                 // Checkpoint Logic
                 if (index === midIndex) {
@@ -1574,7 +1618,7 @@
 
                     case 'narrow': 
                         // Widened to 4 units for better flow
-                        addBoxRelative(20, 1, 4, 10, 0, 0, 0xffaa00); 
+                        addBoxRelative(20, 1, 4, 10, 0, 0, theme.accent); 
                         currentPos = transform(20, 0, 0);
                         break;
 
@@ -1582,7 +1626,7 @@
                         const rampLen = 30; const rise = 10; 
                         const angle = Math.atan2(rise, rampLen); 
                         const hyp = Math.sqrt(rampLen*rampLen + rise*rise); 
-                        addRamp(hyp, 1, 10, rampLen/2, rise/2, 0, 0xff00ff, angle);
+                        addRamp(hyp, 1, 10, rampLen/2, rise/2, 0, theme.primary, angle);
                         currentPos = transform(rampLen, rise, 0);
                         break; 
                     }
@@ -1590,15 +1634,15 @@
                         const rampLenD = 30; const drop = 10; 
                         const angleD = -Math.atan2(drop, rampLenD); 
                         const hypD = Math.sqrt(rampLenD*rampLenD + drop*drop); 
-                        addRamp(hypD, 1, 10, rampLenD/2, -drop/2, 0, 0x00ffff, angleD);
+                        addRamp(hypD, 1, 10, rampLenD/2, -drop/2, 0, theme.secondary, angleD);
                         currentPos = transform(rampLenD, -drop, 0);
                         break; 
                     }
                     
                     case 'walls': 
                         addBoxRelative(25, 1, 10, 12.5, 0, 0, baseColor);
-                        addBoxRelative(1, 4, 10, 8, 2, 0, 0x5555ff);
-                        addBoxRelative(1, 4, 10, 16, 2, 0, 0x5555ff);
+                        addBoxRelative(1, 4, 10, 8, 2, 0, theme.wall);
+                        addBoxRelative(1, 4, 10, 16, 2, 0, theme.wall);
                         currentPos = transform(25, 0, 0);
                         break;
 
@@ -1618,9 +1662,8 @@
                     case 'tilts': { 
                         for(let i=0; i<2; i++) { 
                             const t = transform(8 + (i*10), 0.5, 0);
-                            const p = createBox(8, 0.5, 8, t.x, t.y, t.z, 0x33aaff, 10, 0, currentAngle, 0); 
+                            const p = createBox(8, 0.5, 8, t.x, t.y, t.z, theme.secondary, 10, 0, currentAngle, 0); 
                             p.body.type = CANNON.Body.KINEMATIC; 
-                            // Store level angle for correct tilt axis
                             obstacles.push({ ...p, type: 'tilt', speed: 1.5, offset: i, levelAngle: currentAngle }); 
                         } 
                         currentPos = transform(25, 0, 0);
@@ -1649,9 +1692,9 @@
                         obstacles.push({ ...h2, type: 'spinner', speed: -4 });
 
                         // Walls Right
-                        addBoxRelative(1, 4, 8, 15, 2, 8, 0x5555ff);
-                        addBoxRelative(1, 4, 8, 25, 2, 8, 0x5555ff);
-                        addBoxRelative(1, 4, 8, 35, 2, 8, 0x5555ff);
+                        addBoxRelative(1, 4, 8, 15, 2, 8, theme.wall);
+                        addBoxRelative(1, 4, 8, 25, 2, 8, theme.wall);
+                        addBoxRelative(1, 4, 8, 35, 2, 8, theme.wall);
                         
                         currentPos = transform(45, 0, 0);
                         break; 
@@ -1680,9 +1723,8 @@
                     
                     case 'rotating_disc': {
                         addBoxRelative(5, 1, 10, 2.5, 0, 0, baseColor);
-                        // Disc
                         const t = transform(15, 0, 0);
-                        const disc = createCylinder(12, 12, 1, t.x, t.y, t.z, 0xffaa00, 100);
+                        const disc = createCylinder(12, 12, 1, t.x, t.y, t.z, theme.accent, 100);
                         disc.body.type = CANNON.Body.KINEMATIC;
                         obstacles.push({ ...disc, type: 'rotating_disc', speed: 3.5 });
                         
@@ -1696,7 +1738,7 @@
                         for(let i=0; i<3; i++) {
                             const lx = startLocX + (i * 12);
                             const t = transform(lx, 0, 0);
-                            const p = createBox(8, 1, 8, t.x, t.y, t.z, 0xff8800, 100, 0, currentAngle, 0);
+                            const p = createBox(8, 1, 8, t.x, t.y, t.z, theme.primary, 100, 0, currentAngle, 0);
                             p.body.type = CANNON.Body.KINEMATIC;
                             // Pass angle so we know which way is "side"
                             obstacles.push({ ...p, type: 'moving_platform', speed: 2, offset: i * 2, initialPos: {x: t.x, y: t.y, z: t.z}, levelAngle: currentAngle });
@@ -1739,10 +1781,9 @@
 
                     case 'arch_jump': {
                         addBoxRelative(10, 1, 10, 5, 0, 0, baseColor);
-                        // Ring
-                        addBoxRelative(1, 10, 1, 15, 5, -4, 0xffff00);
-                        addBoxRelative(1, 10, 1, 15, 5, 4, 0xffff00);
-                        addBoxRelative(1, 1, 9, 15, 10, 0, 0xffff00);
+                        addBoxRelative(1, 10, 1, 15, 5, -4, theme.accent);
+                        addBoxRelative(1, 10, 1, 15, 5, 4, theme.accent);
+                        addBoxRelative(1, 1, 9, 15, 10, 0, theme.accent);
                         
                         addBoxRelative(10, 1, 10, 25, 0, 0, baseColor);
                         currentPos = transform(30, 0, 0);
@@ -1751,8 +1792,7 @@
 
                     case 'punch_wall': {
                         addBoxRelative(20, 1, 12, 10, 0, 0, baseColor);
-                        // Wall (at back edge? z-5 relative)
-                        addBoxRelative(20, 5, 2, 10, 3, -5, 0x5555ff);
+                        addBoxRelative(20, 5, 2, 10, 3, -5, theme.wall);
                         // Pistons
                         for(let i=0; i<3; i++) {
                             const lx = 5 + (i*5);
@@ -1764,8 +1804,123 @@
                         currentPos = transform(20, 0, 0);
                         break;
                     }
+
+                    // --- NEW SEGMENT TYPES ---
+
+                    case 'gap_jump': {
+                        // Platform, gap, platform - player must jump across
+                        // Gap of 8 units is safe with jump velocity 20 and speed 30
+                        addBoxRelative(10, 1, 10, 5, 0, 0, baseColor);
+                        // Gap of 8 units (no floor)
+                        addBoxRelative(10, 1, 10, 23, 0, 0, baseColor);
+                        currentPos = transform(28, 0, 0);
+                        break;
+                    }
+
+                    case 'zigzag': {
+                        // Alternating offset platforms requiring lateral movement
+                        const zigWidth = 5;
+                        const zigLen = 8;
+                        for (let i = 0; i < 4; i++) {
+                            const offsetZ = (i % 2 === 0) ? -4 : 4;
+                            addBoxRelative(zigLen, 1, zigWidth, 4 + i * zigLen, 0, offsetZ, i % 2 === 0 ? theme.primary : theme.secondary);
+                        }
+                        currentPos = transform(36, 0, 0);
+                        break;
+                    }
+
+                    case 'floating_islands': {
+                        // Small platforms with gaps - hop between them
+                        // Each island 5x5, gaps of 6 units (safe jump distance)
+                        addBoxRelative(5, 1, 5, 2.5, 0, 0, baseColor); // starting island
+                        addBoxRelative(5, 1, 5, 13.5, 1, -3, theme.primary);
+                        addBoxRelative(5, 1, 5, 24.5, 0.5, 2, theme.secondary);
+                        addBoxRelative(5, 1, 5, 35.5, 0, -1, theme.primary);
+                        addBoxRelative(8, 1, 10, 46, 0, 0, baseColor); // landing
+                        currentPos = transform(50, 0, 0);
+                        break;
+                    }
+
+                    case 'pillars': {
+                        // Narrow columns to hop between
+                        addBoxRelative(4, 1, 10, 2, 0, 0, baseColor); // entry
+                        for (let i = 0; i < 5; i++) {
+                            const px = 8 + i * 6;
+                            const py = Math.sin(i * 0.8) * 2; // gentle wave height
+                            const pz = (i % 2 === 0 ? -2 : 2);
+                            addBoxRelative(3, 3 + Math.abs(py), 3, px, -(3 + Math.abs(py))/2 + 0.5 + py, pz, theme.wall);
+                        }
+                        addBoxRelative(4, 1, 10, 40, 0, 0, baseColor); // exit
+                        currentPos = transform(44, 0, 0);
+                        break;
+                    }
+
+                    case 's_curve': {
+                        // Curving path made from offset segments
+                        const curveLen = 8;
+                        const curveW = 6;
+                        // Right curve
+                        addBoxRelative(curveLen, 1, curveW, curveLen/2, 0, 3, theme.floor1);
+                        addBoxRelative(curveLen, 1, curveW, curveLen + curveLen/2, 0, 5, theme.floor2);
+                        // Left curve back
+                        addBoxRelative(curveLen, 1, curveW, curveLen*2 + curveLen/2, 0, 2, theme.floor1);
+                        addBoxRelative(curveLen, 1, curveW, curveLen*3 + curveLen/2, 0, -2, theme.floor2);
+                        // Right curve back to center
+                        addBoxRelative(curveLen, 1, curveW, curveLen*4 + curveLen/2, 0, -5, theme.floor1);
+                        addBoxRelative(curveLen, 1, curveW, curveLen*5 + curveLen/2, 0, -2, theme.floor2);
+                        // Side rails for guidance
+                        addBoxRelative(curveLen*6, 0.5, 0.5, curveLen*3, 1, -9, theme.wall);
+                        addBoxRelative(curveLen*6, 0.5, 0.5, curveLen*3, 1, 9, theme.wall);
+                        currentPos = transform(curveLen*6, 0, 0);
+                        break;
+                    }
+
+                    case 'drop_ledges': {
+                        // Descending ledges to drop down - like reverse stairs but with gaps
+                        addBoxRelative(6, 1, 10, 3, 0, 0, baseColor);
+                        addBoxRelative(6, 1, 8, 12, -2, 2, theme.primary);
+                        addBoxRelative(6, 1, 8, 21, -4, -2, theme.secondary);
+                        addBoxRelative(6, 1, 8, 30, -6, 1, theme.primary);
+                        addBoxRelative(8, 1, 10, 40, -6, 0, baseColor);
+                        currentPos = transform(44, -6, 0);
+                        break;
+                    }
+
+                    case 'wave_platforms': {
+                        // Platforms that bob up and down in a wave pattern
+                        addBoxRelative(5, 1, 10, 2.5, 0, 0, baseColor); // entry
+                        for (let i = 0; i < 4; i++) {
+                            const lx = 9 + i * 8;
+                            const t = transform(lx, 0, 0);
+                            const wp = createBox(6, 1, 8, t.x, t.y, t.z, theme.secondary, 100, 0, currentAngle, 0);
+                            wp.body.type = CANNON.Body.KINEMATIC;
+                            obstacles.push({ ...wp, type: 'wave_platform', speed: 1.5, offset: i * 1.5, initialPos: {x: t.x, y: t.y, z: t.z} });
+                        }
+                        addBoxRelative(5, 1, 10, 43, 0, 0, baseColor); // exit
+                        currentPos = transform(48, 0, 0);
+                        break;
+                    }
+
+                    case 'bumper_alley': {
+                        // Corridor with spinning bumpers to dodge
+                        addBoxRelative(40, 1, 12, 20, 0, 0, baseColor);
+                        // Side walls
+                        addBoxRelative(40, 3, 1, 20, 1.5, -6, theme.wall);
+                        addBoxRelative(40, 3, 1, 20, 1.5, 6, theme.wall);
+                        // Spinning bumpers at intervals
+                        for (let i = 0; i < 3; i++) {
+                            const lx = 10 + i * 10;
+                            addBoxRelative(1, 4, 1, lx, 2, 0, 0x222222); // post
+                            const t = transform(lx, 3.5, 0);
+                            const bar = createBox(10, 0.8, 0.8, t.x, t.y, t.z, theme.primary, 10, 0, currentAngle, 0);
+                            bar.body.type = CANNON.Body.KINEMATIC;
+                            obstacles.push({ ...bar, type: 'spinner', speed: (i % 2 === 0 ? 4 : -4) });
+                        }
+                        currentPos = transform(40, 0, 0);
+                        break;
+                    }
                     
-                    case 'finish': { 
+                    case 'finish': {
                         finishLinePos.copy(currentPos); // Approximate check
                         addBoxRelative(20, 1, 20, 10, 0, 0, 0xffd700);
                         // Arch
@@ -2006,24 +2161,27 @@
                     obs.body.velocity.set(sx * vMag, 0, sz * vMag);
                 }
                 else if (obs.type === 'puncher') {
-                     // Puncher moves sideways (relative to its own wall, which is side-facing).
-                     // Actually logic in buildLevel: piston is at z-4 relative.
-                     // It moves "forward/back" relative to the wall face.
-                     // Local Z motion relative to level.
                      const sx = -Math.sin(obs.levelAngle);
                      const sz = Math.cos(obs.levelAngle);
                      
-                     // abs(sin) for bounce effect
                      const pOffset = Math.sin(time * obs.speed + obs.offset) * 3;
-                     // We add abs(offset) to push out
                      const dist = Math.abs(pOffset);
                      
-                     // Move along side vector
                      obs.body.position.set(
                         obs.initialPos.x + sx * dist,
                         obs.initialPos.y,
                         obs.initialPos.z + sz * dist
                      );
+                }
+                else if (obs.type === 'wave_platform') {
+                     // Vertical bobbing motion
+                     const yOffset = Math.sin(time * obs.speed + obs.offset) * 3;
+                     obs.body.position.set(
+                        obs.initialPos.x,
+                        obs.initialPos.y + yOffset,
+                        obs.initialPos.z
+                     );
+                     obs.body.velocity.set(0, 3 * obs.speed * Math.cos(time * obs.speed + obs.offset), 0);
                 }
 
                 obs.mesh.position.copy(obs.body.position); 
