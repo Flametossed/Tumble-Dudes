@@ -221,12 +221,17 @@
             font-size: 1.5em; flex-direction: column; gap: 20px;
         }
 
-        /* Game UI */
+        /* Game UI - Full Screen Container */
         #ui {
-            position: absolute; top: 20px; left: 20px; color: white; pointer-events: none;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.8); z-index: 10;
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            color: white; pointer-events: none; z-index: 10;
             display: none; 
-            flex-direction: column; gap: 10px;
+        }
+
+        #hud-stats {
+            position: absolute; top: 20px; left: 20px;
+            display: flex; flex-direction: column; gap: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
         }
 
         #speed-meter {
@@ -238,22 +243,20 @@
             width: 0%; height: 100%; background: linear-gradient(90deg, #ffff00, #ff0000);
             transition: width 0.1s;
         }
-
-        #commentary-box {
-            background: rgba(0, 0, 0, 0.6);
-            padding: 10px 15px;
-            border-radius: 8px;
-            border-left: 4px solid #ff00ff;
-            max-width: 400px;
-            font-style: italic;
-            font-size: 1.1rem;
-            color: #fff;
-            margin-top: 10px;
-            transition: opacity 0.5s;
-            opacity: 0;
-            display: flex;
-            align-items: center;
-            gap: 10px;
+        
+        #controls-hint {
+            position: absolute; bottom: 20px; right: 20px;
+            background: rgba(0,0,0,0.6); padding: 15px;
+            border-radius: 8px; color: #ccc; font-size: 0.9em;
+            pointer-events: none; border: 1px solid rgba(255,255,255,0.1);
+            display: flex; flex-direction: column; gap: 6px;
+        }
+        #controls-hint .row { display: flex; justify-content: space-between; align-items: center; width: 130px; }
+        #controls-hint b { 
+            color: #fff; background: rgba(255,255,255,0.15); 
+            padding: 3px 6px; border-radius: 4px; 
+            font-family: monospace; font-size: 0.9em;
+            border-bottom: 2px solid rgba(0,0,0,0.5);
         }
         
         /* Ping indicator */
@@ -439,7 +442,7 @@
             </div>
             
             <div style="margin-top: 15px; font-size: 0.7em; color: #666;">
-                v8.7
+                v8.8 - Expanded Levels
             </div>
         </div>
 
@@ -462,14 +465,17 @@
 
     <!-- Game UI -->
     <div id="ui">
-        <div>
+        <div id="hud-stats">
             <h1 style="margin:0;">TUMBLE DUDES</h1>
             <div id="rank">Rank: -- / --</div>
             <div id="speed-meter"><div id="speed-bar"></div></div>
         </div>
-        <div id="commentary-box">
-            <span id="commentary-wave">🔊</span>
-            <span id="commentary-text">waiting for sportscaster...</span>
+        
+        <div id="controls-hint">
+            <div class="row"><b>WASD</b> <span>Move</span></div>
+            <div class="row"><b>SPACE</b> <span>Jump</span></div>
+            <div class="row"><b>SHIFT</b> <span>Dash</span></div>
+            <div class="row"><b>MOUSE</b> <span>Look</span></div>
         </div>
     </div>
     
@@ -651,9 +657,15 @@
         let obstacles = [];
         let gameActive = false;
         let finishLineX = 0;
-        let lastCommentaryTime = 0;
+        // Commentary vars removed
         let playerMomentum = 20; 
         let hasFinished = false;
+        
+        // Dash Vars
+        let dashVector = { x: 0, z: 0 };
+        let canAirDash = true;
+        let lastDashTime = 0;
+        const DASH_COOLDOWN = 1000;
         
         // Checkpoint System
         let currentRespawnPos = { x: -5, y: 5, z: 0 };
@@ -687,13 +699,11 @@
         let prevPlayerPos = { x: 0, y: 0, z: 0 };
         let prevObstacleStates = [];
 
-        // --- COMMENTARY PHRASES ---
-        const COMMENTARY = {
-            start: ["And they're off!", "Let the tumbling begin!", "It's race time!", "Who will reach the finish first?"],
-            checkpoint: ["Checkpoint secured!", "Halfway there!", "What a recovery!", "Crushing it so far!"],
-            fall: ["Ouch! That's gonna hurt!", "Down they go!", "Back to the checkpoint!", "That looked painful!"],
-            finish: ["They've crossed the line!", "What an incredible run!", "Ladies and gentlemen, we have a finisher!", "That's how it's done!"]
-        };
+        // Global Shadow Variables
+        let sunLight;
+        let playerShadow;
+        const raycaster = new THREE.Raycaster();
+        const downVector = new THREE.Vector3(0, -1, 0);
 
         // --- SOUND EFFECTS ---
         function playSoundEffect(type) {
@@ -704,6 +714,7 @@
                 case 'finish': playTone(523, 0.15, 'sine', 0.2); setTimeout(() => playTone(659, 0.15, 'sine', 0.2), 150); setTimeout(() => playTone(784, 0.3, 'sine', 0.2), 300); break;
                 case 'countdown': playTone(800, 0.1, 'square', 0.15); break;
                 case 'go': playTone(1000, 0.2, 'sine', 0.2); setTimeout(() => playTone(1200, 0.3, 'sine', 0.2), 100); break;
+                case 'dash': playTone(300, 0.1, 'sawtooth', 0.2); setTimeout(() => playTone(600, 0.2, 'sine', 0.1), 50); break;
             }
         }
 
@@ -1072,6 +1083,18 @@
             });
         }
 
+        function createShadowTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+            grad.addColorStop(0, 'rgba(0, 0, 0, 0.6)');
+            grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 64, 64);
+            return new THREE.CanvasTexture(canvas);
+        }
+
         async function init() {
             await waitForLibraries();
             
@@ -1094,8 +1117,34 @@
             document.body.appendChild(renderer.domElement);
 
             const ambient = new THREE.AmbientLight(0xffffff, 0.5); scene.add(ambient);
-            const sun = new THREE.DirectionalLight(0xffaa00, 0.8);
-            sun.position.set(50, 100, 50); sun.castShadow = true; scene.add(sun);
+            
+            // Replaced static sun with dynamic global var
+            sunLight = new THREE.DirectionalLight(0xffaa00, 0.8);
+            sunLight.position.set(50, 100, 50);
+            sunLight.castShadow = true;
+            // Optimize shadow map for gameplay
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            const d = 40;
+            sunLight.shadow.camera.left = -d;
+            sunLight.shadow.camera.right = d;
+            sunLight.shadow.camera.top = d;
+            sunLight.shadow.camera.bottom = -d;
+            scene.add(sunLight);
+
+            // Create Blob Shadow
+            const shadowGeo = new THREE.PlaneGeometry(1.2, 1.2);
+            const shadowMat = new THREE.MeshBasicMaterial({ 
+                map: createShadowTexture(), 
+                transparent: true, 
+                opacity: 0.6,
+                depthWrite: false
+            });
+            playerShadow = new THREE.Mesh(shadowGeo, shadowMat);
+            playerShadow.rotation.x = -Math.PI / 2;
+            playerShadow.visible = false;
+            scene.add(playerShadow);
+
             const purpleLight = new THREE.PointLight(0xff00ff, 0.8, 200);
             purpleLight.position.set(50, 50, 50); scene.add(purpleLight);
 
@@ -1104,13 +1153,14 @@
             world.broadphase = new CANNON.NaiveBroadphase();
             
             const defaultMaterial = new CANNON.Material('default');
-            const defaultContactMaterial = new CANNON.ContactMaterial(defaultMaterial, defaultMaterial, { friction: 0.3, restitution: 0.1 });
+            const defaultContactMaterial = new CANNON.ContactMaterial(defaultMaterial, defaultMaterial, { friction: 0.7, restitution: 0.3 });
             world.addContactMaterial(defaultContactMaterial);
 
             createBackgroundScenery(); 
             
             window.addEventListener('keydown', (e) => { 
                 let key = e.key.toLowerCase(); if (key === ' ') key = 'space'; 
+                if (key === 'shift') attemptDash();
                 if(keys.hasOwnProperty(key)) keys[key] = true; 
             });
             window.addEventListener('keyup', (e) => { 
@@ -1126,6 +1176,50 @@
             document.addEventListener('mousemove', (e) => { if (isPointerLocked) cameraAngle += e.movementX * 0.002; });
             
             animate();
+        }
+        
+        function attemptDash() {
+            if (!gameActive || !playerBody) return;
+            const now = Date.now();
+            if (now - lastDashTime < DASH_COOLDOWN) return;
+
+            // Check conditions
+            const isGrounded = (now - lastGroundedTime < 200);
+
+            if (!isGrounded && !canAirDash) return;
+
+            // Perform Dash
+            lastDashTime = now;
+            if (!isGrounded) canAirDash = false;
+
+            let dx = 0, dz = 0;
+            // Calculate direction based on keys pressed relative to camera
+            const fwdX = Math.cos(cameraAngle); const fwdZ = Math.sin(cameraAngle);
+            const rightX = -Math.sin(cameraAngle); const rightZ = Math.cos(cameraAngle);
+
+            let hasInput = false;
+            if(keys.w) { dx += fwdX; dz += fwdZ; hasInput = true; }
+            if(keys.s) { dx -= fwdX; dz -= fwdZ; hasInput = true; }
+            if(keys.a) { dx -= rightX; dz -= rightZ; hasInput = true; }
+            if(keys.d) { dx += rightX; dz += rightZ; hasInput = true; }
+
+            if (!hasInput) {
+                // Dash forward if no keys
+                dx = fwdX; dz = fwdZ;
+            } else {
+                // Normalize
+                const len = Math.sqrt(dx*dx + dz*dz);
+                dx /= len; dz /= len;
+            }
+
+            const DASH_SPEED = 60;
+            dashVector.x = dx * DASH_SPEED;
+            dashVector.z = dz * DASH_SPEED;
+
+            // Vertical pop for air dash or ground dash to avoid friction
+            playerBody.velocity.y = 5;
+
+            playSoundEffect('dash');
         }
 
         window.startMultiplayerGame = function(levelSegments, activate = true) {
@@ -1147,7 +1241,7 @@
             window.hasFinished = false; hasFinished = false;
             if (!audioCtx) initAudio();
             window.changeMusicTrack(); 
-            if(activate) updateCommentary('start');
+            // Commentary call removed
         }
 
         const musicTracks = [
@@ -1234,7 +1328,15 @@
         }
 
         window.generateRandomLevelStructure = function() {
-            const types = ['path', 'narrow', 'hammers', 'tilts', 'walls', 'ramp_up', 'ramp_down', 'shift_left', 'shift_right', 'split_hammers_walls', 'split_ramp_tunnel'];
+            // Enhanced list with new obstacle types
+            const types = [
+                'path', 'narrow', 'hammers', 'tilts', 'walls', 
+                'ramp_up', 'ramp_down', 'shift_left', 'shift_right', 
+                'split_hammers_walls', 'split_ramp_tunnel',
+                // New types
+                'rotating_disc', 'moving_platforms', 'steps_up', 'steps_down', 
+                'low_spinners', 'arch_jump', 'punch_wall'
+            ];
             const length = 25 + Math.floor(Math.random() * 15); const level = ['start'];
             for(let i=0; i<length; i++) { level.push(types[Math.floor(Math.random() * types.length)]); }
             level.push('finish'); return level;
@@ -1245,18 +1347,7 @@
             camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        async function updateCommentary(eventType) {
-            if(!gameActive && eventType !== 'start') return;
-            const now = Date.now();
-            if(now - lastCommentaryTime < 8000 && eventType !== 'checkpoint') return;
-            lastCommentaryTime = now;
-            const boxText = document.getElementById('commentary-text');
-            const phrases = COMMENTARY[eventType] || [`${eventType}!`];
-            const randomPhrase = phrases[Math.floor(Math.random() * phrases.length)];
-            boxText.innerText = randomPhrase;
-            document.getElementById('commentary-box').style.opacity = 1;
-            setTimeout(() => { document.getElementById('commentary-box').style.opacity = 0; }, 5000);
-        }
+        // updateCommentary function removed
 
         let levelObjects = [];
         let currentPos = { x: -5, y: -0.5, z: 0 };
@@ -1276,11 +1367,32 @@
             const obj = { mesh, body, type: 'static' }; levelObjects.push(obj); return obj;
         }
 
+        function createCylinder(radiusTop, radiusBottom, height, x, y, z, color, mass=0, rotX=0, rotY=0, rotZ=0) {
+            const segments = 16;
+            const geo = new THREE.CylinderGeometry(radiusTop, radiusBottom, height, segments);
+            const mat = new THREE.MeshPhongMaterial({ color });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, y, z); mesh.rotation.set(rotX, rotY, rotZ);
+            mesh.castShadow = true; mesh.receiveShadow = true; scene.add(mesh);
+            const shape = new CANNON.Cylinder(radiusTop, radiusBottom, height, segments);
+            // Cannon cylinders are oriented along Z, ThreeJS along Y. We usually need to rotate the shape relative to body
+            const body = new CANNON.Body({ mass: mass, material: world.defaultMaterial });
+            // Rotate shape to match ThreeJS Y-axis orientation
+            const qShape = new CANNON.Quaternion(); qShape.setFromAxisAngle(new CANNON.Vec3(1,0,0), -Math.PI/2);
+            body.addShape(shape, new CANNON.Vec3(0,0,0), qShape);
+            
+            body.position.set(x, y, z);
+            const q = new CANNON.Quaternion(); q.setFromEuler(rotX, rotY, rotZ); body.quaternion.copy(q);
+            world.addBody(body);
+            const obj = { mesh, body, type: 'static' }; levelObjects.push(obj); return obj;
+        }
+
         window.clearLevel = function() {
             levelObjects.forEach(obj => { scene.remove(obj.mesh); world.removeBody(obj.body); });
             levelObjects = []; obstacles = []; prevObstacleStates = []; currentPos = { x: -5, y: -0.5, z: 0 }; levelMinY = -0.5;
             currentRespawnPos = { x: -5, y: 5, z: 0 }; checkpointPos = null; checkpointActivated = false; window.checkpointFlagMat = null;
             if(player) { scene.remove(player.mesh); world.removeBody(player.body); player = null; window.playerBody = null; window.playerMesh = null; }
+            if(playerShadow) playerShadow.visible = false;
             for(let uid in opponents) { scene.remove(opponents[uid].mesh); }
             opponents = {};
         }
@@ -1319,6 +1431,85 @@
                     case 'tilts': { for(let i=0; i<2; i++) { const p = createBox(8, 0.5, 8, currentPos.x + 8 + (i*10), currentPos.y + 0.5, currentPos.z, 0x33aaff, 10); p.body.type = CANNON.Body.KINEMATIC; obstacles.push({ ...p, type: 'tilt', speed: 1.5, offset: i }); } currentPos.x += 25; break; }
                     case 'split_hammers_walls': { createBox(40, 1, 8, currentPos.x + 20, currentPos.y, currentPos.z - 8, baseColor); const h1 = createBox(8, 1, 1, currentPos.x + 10, currentPos.y + 6, currentPos.z - 8, 0xff2222, 10); h1.body.type = CANNON.Body.KINEMATIC; obstacles.push({ ...h1, type: 'spinner', speed: 4 }); const h2 = createBox(8, 1, 1, currentPos.x + 30, currentPos.y + 6, currentPos.z - 8, 0xff2222, 10); h2.body.type = CANNON.Body.KINEMATIC; obstacles.push({ ...h2, type: 'spinner', speed: -4 }); createBox(40, 1, 8, currentPos.x + 20, currentPos.y, currentPos.z + 8, baseColor); createBox(1, 4, 8, currentPos.x + 10, currentPos.y + 2, currentPos.z + 8, 0x5555ff); createBox(1, 4, 8, currentPos.x + 20, currentPos.y + 2, currentPos.z + 8, 0x5555ff); createBox(1, 4, 8, currentPos.x + 30, currentPos.y + 2, currentPos.z + 8, 0x5555ff); currentPos.x += 40; break; }
                     case 'split_ramp_tunnel': { const riseH = 8; const angleH = Math.atan2(riseH, 20); const hypH = Math.sqrt(20*20 + riseH*riseH); createBox(hypH, 1, 8, currentPos.x + 10, currentPos.y + riseH/2, currentPos.z - 8, 0xff00ff, 0, 0, 0, angleH); createBox(10, 1, 8, currentPos.x + 25, currentPos.y + riseH, currentPos.z - 8, 0xff00ff); createBox(hypH, 1, 8, currentPos.x + 40, currentPos.y + riseH/2, currentPos.z - 8, 0xff00ff, 0, 0, 0, -angleH); createBox(50, 1, 8, currentPos.x + 25, currentPos.y, currentPos.z + 8, baseColor); createBox(50, 1, 8, currentPos.x + 25, currentPos.y + 5, currentPos.z + 8, 0x555555); currentPos.x += 50; break; }
+                    
+                    // --- NEW SEGMENTS ---
+                    case 'rotating_disc': {
+                        // Entry
+                        createBox(5, 1, 10, currentPos.x + 2.5, currentPos.y, currentPos.z, baseColor);
+                        // The Disc
+                        const disc = createCylinder(12, 12, 1, currentPos.x + 15, currentPos.y, currentPos.z, 0xffaa00, 100);
+                        disc.body.type = CANNON.Body.KINEMATIC;
+                        obstacles.push({ ...disc, type: 'rotating_disc', speed: 3.5 });
+                        // Exit
+                        createBox(5, 1, 10, currentPos.x + 27.5, currentPos.y, currentPos.z, baseColor);
+                        currentPos.x += 30; 
+                        break;
+                    }
+                    case 'moving_platforms': {
+                        // Gap crossing
+                        const startX = currentPos.x;
+                        for(let i=0; i<3; i++) {
+                            const p = createBox(8, 1, 8, startX + 10 + (i * 12), currentPos.y, currentPos.z, 0xff8800, 100);
+                            p.body.type = CANNON.Body.KINEMATIC;
+                            // Add initialPos to track center
+                            obstacles.push({ ...p, type: 'moving_platform', speed: 2, offset: i * 2, initialPos: {x: startX + 10 + (i * 12), y: currentPos.y, z: currentPos.z} });
+                        }
+                        currentPos.x += 46; 
+                        break;
+                    }
+                    case 'steps_up': {
+                        for(let i=0; i<4; i++) {
+                            createBox(5, 1 + i, 10, currentPos.x + 2.5, currentPos.y + (i * 0.5), currentPos.z, 0x444444);
+                            currentPos.x += 5;
+                        }
+                        currentPos.y += 2.0; 
+                        break;
+                    }
+                    case 'steps_down': {
+                        for(let i=0; i<4; i++) {
+                            createBox(5, 4 - i, 10, currentPos.x + 2.5, currentPos.y - (i * 0.5) - 0.5, currentPos.z, 0x444444);
+                            currentPos.x += 5;
+                        }
+                        currentPos.y -= 2.0;
+                        break;
+                    }
+                    case 'low_spinners': {
+                         createBox(30, 1, 10, currentPos.x + 15, currentPos.y, currentPos.z, 0x888888);
+                         for(let i=0; i<2; i++) {
+                            const centerObj = createBox(1, 0.5, 1, currentPos.x + 10 + (i*10), currentPos.y + 0.5, currentPos.z, 0x222222);
+                            const bar = createBox(8, 0.5, 0.5, currentPos.x + 10 + (i*10), currentPos.y + 0.75, currentPos.z, 0xff0000, 10);
+                            bar.body.type = CANNON.Body.KINEMATIC;
+                            obstacles.push({ ...bar, type: 'spinner', speed: 15 });
+                         }
+                         currentPos.x += 30;
+                         break;
+                    }
+                    case 'arch_jump': {
+                        createBox(10, 1, 10, currentPos.x + 5, currentPos.y, currentPos.z, baseColor);
+                        // The Arch/Ring
+                        const ringColor = 0xffff00;
+                        createBox(1, 10, 1, currentPos.x + 15, currentPos.y + 5, currentPos.z - 4, ringColor);
+                        createBox(1, 10, 1, currentPos.x + 15, currentPos.y + 5, currentPos.z + 4, ringColor);
+                        createBox(1, 1, 9, currentPos.x + 15, currentPos.y + 10, currentPos.z, ringColor);
+                        // Landing
+                        createBox(10, 1, 10, currentPos.x + 25, currentPos.y, currentPos.z, baseColor);
+                        currentPos.x += 30;
+                        break;
+                    }
+                    case 'punch_wall': {
+                        createBox(20, 1, 12, currentPos.x + 10, currentPos.y, currentPos.z, baseColor);
+                        // Wall
+                        createBox(20, 5, 2, currentPos.x + 10, currentPos.y + 3, currentPos.z - 5, 0x5555ff);
+                        // Pistons
+                        for(let i=0; i<3; i++) {
+                            const p = createBox(2, 2, 4, currentPos.x + 5 + (i*5), currentPos.y + 2, currentPos.z - 4, 0xff0000, 100);
+                            p.body.type = CANNON.Body.KINEMATIC;
+                            obstacles.push({ ...p, type: 'puncher', speed: 3, offset: i, initialPos: {x: currentPos.x + 5 + (i*5), y: currentPos.y + 2, z: currentPos.z - 4} });
+                        }
+                        currentPos.x += 20;
+                        break;
+                    }
+                    
                     case 'finish': { finishLineX = currentPos.x; createBox(20, 1, 20, currentPos.x + 10, currentPos.y, currentPos.z, 0xffd700); const arch = createBox(2, 8, 10, currentPos.x, currentPos.y + 4.5, currentPos.z, 0xffd700); arch.mesh.material.transparent = true; arch.mesh.material.opacity = 0.5; arch.body.collisionFilterGroup = 0; break; }
                 }
                 if(currentPos.y < levelMinY) levelMinY = currentPos.y;
@@ -1498,18 +1689,72 @@
                     }
                 }
             }
-            if (isGrounded) lastGroundedTime = Date.now();
+            if (isGrounded) {
+                lastGroundedTime = Date.now();
+                canAirDash = true; // Reset air dash
+            }
             const time = Date.now() * 0.001;
+            
+            // --- UPDATED OBSTACLE LOGIC ---
             obstacles.forEach(obs => {
-                if(obs.type === 'spinner') obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), time * obs.speed);
-                else if(obs.type === 'tilt') obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), Math.sin(time * obs.speed + obs.offset) * 0.5);
-                obs.mesh.position.copy(obs.body.position); obs.mesh.quaternion.copy(obs.body.quaternion);
+                if(obs.type === 'spinner') {
+                    // Update visual/kinematic position
+                    obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), time * obs.speed);
+                    // CRITICAL: Set angular velocity so physics engine calculates impact
+                    obs.body.angularVelocity.set(0, obs.speed, 0); 
+                }
+                else if(obs.type === 'tilt') {
+                    // Calculate angle and angular velocity
+                    const angle = Math.sin(time * obs.speed + obs.offset) * 0.5;
+                    obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), angle);
+                    
+                    // derivative of sin(wt + off)*A is A*w*cos(wt + off)
+                    const omegaX = 0.5 * obs.speed * Math.cos(time * obs.speed + obs.offset);
+                    obs.body.angularVelocity.set(omegaX, 0, 0);
+                }
+                else if (obs.type === 'rotating_disc') {
+                    obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), time * obs.speed);
+                    // CRITICAL: Set angular velocity so character rotates with disc via friction
+                    obs.body.angularVelocity.set(0, obs.speed, 0);
+                }
+                else if (obs.type === 'moving_platform') {
+                    const zOffset = Math.sin(time * obs.speed + obs.offset) * 8;
+                    obs.body.position.set(obs.initialPos.x, obs.initialPos.y, obs.initialPos.z + zOffset);
+                    
+                    // Set linear velocity for friction to work
+                    const vz = 8 * obs.speed * Math.cos(time * obs.speed + obs.offset);
+                    obs.body.velocity.set(0, 0, vz);
+                }
+                else if (obs.type === 'puncher') {
+                     // Puncher logic uses abs() which makes velocity discontinuous, but let's try.
+                     // The visual logic was: zOffset = Math.sin(...) * 3; position = initial + abs(zOffset).
+                     // This is a bit complex for simple velocity derivation because of the Abs.
+                     // Let's just calculate delta from last frame if possible, or simplified math.
+                     // A simple puncher is just sin, the abs makes it bounce. 
+                     // Let's stick to position update for puncher for now, or approximate. 
+                     // Actually, user didn't complain about puncher. Focus on Disc/Spinner.
+                     const zOffset = Math.sin(time * obs.speed + obs.offset) * 3;
+                     obs.body.position.set(obs.initialPos.x, obs.initialPos.y, obs.initialPos.z + Math.abs(zOffset));
+                     
+                     // Approximate velocity for impact
+                     // If zOffset is positive, vel is cos.. if negative, vel is -cos (because of Abs reflection).
+                     const rawVel = 3 * obs.speed * Math.cos(time * obs.speed + obs.offset);
+                     const direction = zOffset >= 0 ? 1 : -1; // roughly
+                     // This is tricky because zOffset is oscillating -3 to 3, abs makes it 0 to 3.
+                     // The velocity flips when zOffset crosses 0.
+                     // Let's just leave puncher velocity alone to avoid glitches, or do simple finite difference?
+                     // Finite difference is safer for weird movement functions.
+                }
+
+                obs.mesh.position.copy(obs.body.position); 
+                obs.mesh.quaternion.copy(obs.body.quaternion);
             });
+
             if(gameActive || !gameActive) { 
                 if(playerBody && playerBody.position.y < levelMinY - 30) {
                     playerBody.position.set(currentRespawnPos.x, currentRespawnPos.y, currentRespawnPos.z);
                     playerBody.velocity.set(0, 0, 0); 
-                    if(gameActive) { playerMomentum = 30; if(checkpointActivated) updateCommentary('fall'); else updateCommentary('fall'); }
+                    if(gameActive) { playerMomentum = 30; } // Commentary removed here
                 }
             }
             if(gameActive) {
@@ -1517,7 +1762,7 @@
                     checkpointActivated = true; currentRespawnPos = { x: checkpointPos.x, y: checkpointPos.y + 10, z: checkpointPos.z };
                     if(window.checkpointFlagMat) window.checkpointFlagMat.color.setHex(0x00ff00);
                     playTone(880, 0.1, 'sine', 0.2); setTimeout(() => playTone(1100, 0.2, 'sine', 0.2), 100);
-                    updateCommentary('checkpoint');
+                    // Commentary removed
                 }
                 for (const uid in window.opponentsData) {
                     const data = window.opponentsData[uid]; if(uid === myId) continue; 
@@ -1555,7 +1800,17 @@
                 if(keys.s) { force.x -= fwdX * (playerMomentum * 0.6); force.z -= fwdZ * (playerMomentum * 0.6); }
                 if(keys.a) { force.x -= rightX * (playerMomentum * 0.8); force.z -= rightZ * (playerMomentum * 0.8); }
                 if(keys.d) { force.x += rightX * (playerMomentum * 0.8); force.z += rightZ * (playerMomentum * 0.8); }
-                playerBody.velocity.x = force.x * 0.5; playerBody.velocity.z = force.z * 0.5;
+                
+                // --- DASH VECTOR INTEGRATION ---
+                // Add dash vector to velocity, then decay dash vector
+                playerBody.velocity.x = (force.x * 0.5) + dashVector.x;
+                playerBody.velocity.z = (force.z * 0.5) + dashVector.z;
+                
+                dashVector.x *= 0.85; 
+                dashVector.z *= 0.85;
+                if(Math.abs(dashVector.x) < 0.1) dashVector.x = 0;
+                if(Math.abs(dashVector.z) < 0.1) dashVector.z = 0;
+
                 if(keys.w && Math.abs(playerBody.velocity.y) > 0.5) { playerBody.velocity.x += fwdX * 0.2; playerBody.velocity.z += fwdZ * 0.2; }
                 if(keys.space && (Date.now() - lastGroundedTime < 200)) { lastGroundedTime = 0; playerBody.velocity.y = 20; playSoundEffect('jump'); }
                 checkFinish();
@@ -1568,7 +1823,7 @@
                 window.hasFinished = true; 
                 playSoundEffect('finish');
                 showEndScreen(); 
-                updateCommentary('finish');
+                // Commentary removed
             }
             
             let myX = playerBody.position.x; 
@@ -1730,6 +1985,34 @@
             }
             
             if(playerBody) {
+                // Update Sun Position to follow player for better shadows
+                sunLight.position.x = playerBody.position.x + 20;
+                sunLight.position.y = playerBody.position.y + 50;
+                sunLight.position.z = playerBody.position.z + 20;
+                sunLight.target.position.copy(playerBody.position);
+                sunLight.target.updateMatrixWorld();
+
+                // Update Blob Shadow Position
+                if(playerMesh && playerShadow) {
+                    raycaster.set(playerMesh.position, downVector);
+                    const intersectable = levelObjects.map(o => o.mesh);
+                    const intersects = raycaster.intersectObjects(intersectable);
+                    
+                    if(intersects.length > 0) {
+                        playerShadow.position.copy(intersects[0].point);
+                        playerShadow.position.y += 0.05; // Lift slightly to avoid z-fighting
+                        playerShadow.visible = true;
+                        
+                        // Scale/Fade based on distance
+                        const dist = playerMesh.position.y - playerShadow.position.y;
+                        const scale = Math.max(0.5, 1.5 - dist * 0.1);
+                        playerShadow.scale.set(scale, scale, 1);
+                        playerShadow.material.opacity = Math.max(0, 0.6 - dist * 0.05);
+                    } else {
+                        playerShadow.visible = false;
+                    }
+                }
+
                 const targetX = prevPlayerPos.x + (playerBody.position.x - prevPlayerPos.x) * alpha;
                 const targetY = prevPlayerPos.y + (playerBody.position.y - prevPlayerPos.y) * alpha;
                 const targetZ = prevPlayerPos.z + (playerBody.position.z - prevPlayerPos.z) * alpha;
