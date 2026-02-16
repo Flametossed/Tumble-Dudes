@@ -6,7 +6,7 @@
     <title>Tumble Dudes</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
-    <!-- PeerJS for P2P Networking (Replaces Firebase) -->
+    <!-- PeerJS for P2P Networking -->
     <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 
     <style>
@@ -16,51 +16,178 @@
         #lobby-ui {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: linear-gradient(135deg, #6a0dad, #222);
-            display: flex; /* Default flex */
+            display: flex;
             flex-direction: column; align-items: center; justify-content: center;
             z-index: 100; color: white;
         }
 
         .panel {
             background: rgba(0,0,0,0.85); 
-            padding: 30px; 
+            padding: 25px; 
             border-radius: 20px;
             border: 2px solid #ff00ff; 
             text-align: center; 
-            width: 90%; 
-            max-width: 400px;
+            width: 95%; 
+            max-width: 700px; /* Wider panel for side-by-side layout */
             box-shadow: 0 0 30px rgba(255, 0, 255, 0.3);
             display: flex;
             flex-direction: column;
             align-items: center;
             box-sizing: border-box;
+            max-height: 98vh;
+            overflow-y: auto;
         }
 
-        input {
-            width: 100%; padding: 12px; margin: 10px 0; background: #333;
+        input[type="text"] {
+            width: 100%; padding: 12px; margin: 0; background: #333;
             border: 1px solid #555; color: white; border-radius: 8px; box-sizing: border-box;
             text-transform: uppercase; text-align: center; letter-spacing: 2px;
+        }
+
+        /* Compact Character Creator Styles */
+        #character-creator {
+            width: 100%;
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: row; /* Horizontal layout */
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+        }
+        
+        .cc-column {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            flex: 1;
+        }
+
+        .cc-column-center {
+            flex: 0 0 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #char-preview-container {
+            width: 160px;
+            height: 160px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 50%;
+            overflow: hidden;
+            border: 3px solid rgba(255,255,255,0.1);
+            position: relative;
+            cursor: grab;
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
+        }
+
+        #char-preview-container:active {
+            cursor: grabbing;
+        }
+        
+        #preview-canvas-target { width: 100%; height: 100%; }
+
+        .creator-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0,0,0,0.3);
+            padding: 8px 12px;
+            border-radius: 6px;
+        }
+        
+        .creator-row label {
+            font-size: 0.75em;
+            color: #aaa;
+            text-transform: uppercase;
+            font-weight: bold;
+            text-align: left;
+        }
+        
+        .selector-control {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .arrow-btn {
+            background: rgba(255,255,255,0.1);
+            border: none; color: white; width: 20px; height: 20px;
+            border-radius: 4px; cursor: pointer; font-size: 0.7em;
+            display: flex; align-items: center; justify-content: center;
+            transition: background 0.2s;
+        }
+        .arrow-btn:hover { background: rgba(255,255,255,0.3); }
+
+        .color-display {
+            width: 30px; height: 18px; border-radius: 3px;
+            border: 1px solid rgba(255,255,255,0.3);
+            font-size: 0.7em; line-height: 18px; color: #fff; text-shadow: 1px 1px 1px #000;
+        }
+
+        /* Action Buttons */
+        .action-row {
+            display: flex;
+            width: 100%;
+            gap: 20px;
+            margin-top: 10px;
+            align-items: flex-start;
+        }
+
+        .action-col {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .separator-vert {
+            width: 1px;
+            background: #444;
+            align-self: stretch;
         }
 
         button.btn-primary {
             width: 100%; padding: 12px; background: #ff00ff; color: white;
             border: none; border-radius: 8px; font-weight: bold; cursor: pointer;
-            margin-top: 10px; transition: 0.2s;
+            transition: 0.2s; font-size: 1em;
         }
         button.btn-primary:hover { background: #d400d4; transform: scale(1.02); }
         button.btn-primary:disabled { background: #555; cursor: not-allowed; transform: none; }
 
         button.btn-secondary {
-            background: transparent; 
-            border: 1px solid #777; 
-            color: #aaa;
-            padding: 8px 16px;
-            margin-top: 20px;
+            background: rgba(255, 255, 255, 0.1); 
+            border: 1px solid #555; 
+            color: #ddd;
+            padding: 10px 16px; /* Slightly bigger padding for better touch */
+            margin-top: 15px; /* More spacing from top elements */
             border-radius: 6px;
             cursor: pointer;
+            font-size: 0.9em;
             transition: all 0.2s;
         }
-        button.btn-secondary:hover { border-color: white; color: white; }
+        button.btn-secondary:hover { border-color: white; color: white; background: rgba(255,255,255,0.2); }
+
+        .join-group {
+            display: flex;
+            gap: 5px;
+        }
+        .join-group input {
+            flex: 1;
+            margin: 0;
+            font-size: 0.9em;
+            padding: 10px;
+        }
+        .join-group button {
+            width: auto;
+            padding: 0 20px;
+            margin: 0;
+        }
 
         #player-list {
             list-style: none; padding: 0; margin: 20px 0; text-align: left;
@@ -74,9 +201,10 @@
             display: flex; align-items: center; gap: 10px;
         }
         
-        .player-color-dot {
-            width: 12px; height: 12px; border-radius: 50%;
+        .player-icon {
+            width: 20px; height: 20px; border-radius: 4px;
             display: inline-block; border: 2px solid white;
+            position: relative;
         }
 
         #code-display {
@@ -130,91 +258,35 @@
         
         /* Ping indicator */
         #ping-indicator {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: rgba(0,0,0,0.6);
-            padding: 8px 12px;
-            border-radius: 6px;
-            color: white;
-            font-size: 0.9em;
-            display: none;
-            align-items: center;
-            gap: 8px;
+            position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.6);
+            padding: 8px 12px; border-radius: 6px; color: white; font-size: 0.9em;
+            display: none; align-items: center; gap: 8px;
         }
+        .ping-dot { width: 8px; height: 8px; border-radius: 50%; animation: pulse 2s infinite; }
+        .ping-good { background: #44cc44; } .ping-medium { background: #ffaa00; } .ping-bad { background: #ff4444; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         
-        .ping-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            animation: pulse 2s infinite;
-        }
-        
-        .ping-good { background: #44cc44; }
-        .ping-medium { background: #ffaa00; }
-        .ping-bad { background: #ff4444; }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
-        }
-        
-        /* Disconnect notification */
+        /* Notification */
         #notification-area {
-            position: fixed;
-            top: 80px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 150;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            pointer-events: none;
+            position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
+            z-index: 150; display: flex; flex-direction: column; gap: 10px; pointer-events: none;
         }
-        
         .notification {
-            background: rgba(255, 68, 68, 0.9);
-            color: white;
-            padding: 12px 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            animation: slideIn 0.3s, slideOut 0.3s 2.7s;
-            min-width: 250px;
-            text-align: center;
+            background: rgba(255, 68, 68, 0.9); color: white; padding: 12px 20px;
+            border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            animation: slideIn 0.3s, slideOut 0.3s 2.7s; min-width: 250px; text-align: center;
         }
-        
-        @keyframes slideIn {
-            from { transform: translateY(-20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
-        
-        @keyframes slideOut {
-            from { transform: translateY(0); opacity: 1; }
-            to { transform: translateY(-20px); opacity: 0; }
-        }
+        @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes slideOut { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-20px); opacity: 0; } }
         
         /* Countdown overlay */
         #countdown-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            z-index: 110;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 8em;
-            font-weight: bold;
-            text-shadow: 0 0 20px #ff00ff;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7); z-index: 110;
+            display: none; align-items: center; justify-content: center;
+            color: white; font-size: 8em; font-weight: bold; text-shadow: 0 0 20px #ff00ff;
         }
-        
-        #countdown-overlay.go {
-            color: #44cc44;
-            text-shadow: 0 0 20px #44cc44;
-        }
+        #countdown-overlay.go { color: #44cc44; text-shadow: 0 0 20px #44cc44; }
         
         #win-screen {
             display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -222,39 +294,20 @@
             text-align: center; color: white; box-shadow: 0 0 50px rgba(0,0,0,0.5); z-index: 20;
             width: 400px; border: 2px solid #ff00ff;
         }
-
         #final-leaderboard {
-            width: 100%;
-            margin: 20px auto;
-            background: rgba(0,0,0,0.3);
-            border-radius: 10px;
-            padding: 10px;
-            max-height: 200px;
-            overflow-y: auto;
-            box-sizing: border-box;
+            width: 100%; margin: 20px auto; background: rgba(0,0,0,0.3);
+            border-radius: 10px; padding: 10px; max-height: 200px;
+            overflow-y: auto; box-sizing: border-box;
         }
         .leaderboard-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-            font-size: 1.1em;
+            display: flex; justify-content: space-between; padding: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 1.1em;
         }
-        .leaderboard-row:last-child {
-            border-bottom: none;
-        }
-
-        #end-screen-controls {
-            display: flex;
-            justify-content: center;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-
+        .leaderboard-row:last-child { border-bottom: none; }
+        #end-screen-controls { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
         #end-screen-controls button {
             background: #ff00ff; color: white; border: none; padding: 10px 20px;
-            font-size: 1rem; border-radius: 10px; cursor: pointer;
-            transition: transform 0.1s;
+            font-size: 1rem; border-radius: 10px; cursor: pointer; transition: transform 0.1s;
         }
         #end-screen-controls button:hover { background: #d400d4; transform: scale(1.05); }
 
@@ -264,41 +317,32 @@
             pointer-events: auto !important; color: white; border: 1px solid white; border-radius: 4px;
         }
         
-        /* Improved invite button */
         #invite-btn {
             background: linear-gradient(135deg, #00ffff, #0088ff) !important;
-            border: none !important;
-            color: white !important;
-            padding: 10px 20px !important;
-            margin: 15px 0 !important;
-            font-size: 1em !important;
-            font-weight: bold;
-            box-shadow: 0 4px 15px rgba(0, 255, 255, 0.3);
-            animation: glow 2s infinite;
+            border: none !important; color: white !important;
+            padding: 10px 20px !important; margin: 15px 0 !important;
+            font-size: 1em !important; font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0, 255, 255, 0.3); animation: glow 2s infinite;
         }
-        
-        #invite-btn:hover {
-            transform: scale(1.05) !important;
-            box-shadow: 0 6px 20px rgba(0, 255, 255, 0.5) !important;
-        }
-        
+        #invite-btn:hover { transform: scale(1.05) !important; box-shadow: 0 6px 20px rgba(0, 255, 255, 0.5) !important; }
         @keyframes glow {
             0%, 100% { box-shadow: 0 4px 15px rgba(0, 255, 255, 0.3); }
             50% { box-shadow: 0 4px 25px rgba(0, 255, 255, 0.6); }
         }
+        #waiting-message { font-size: 1.1em; color: #ffaa00; margin: 15px 0; font-style: italic; }
         
-        #waiting-message {
-            font-size: 1.1em;
-            color: #ffaa00;
-            margin: 15px 0;
-            font-style: italic;
+        @media (max-width: 650px) {
+            #character-creator { flex-direction: column; }
+            .panel { width: 90%; }
+            .action-row { flex-direction: column; gap: 15px; }
+            .separator-vert { width: 100%; height: 1px; }
         }
     </style>
 </head>
 <body>
     <div id="loading-overlay">
         <div>Connecting to Cloud...</div>
-        <div style="font-size: 0.5em; color: #888;">v7.2</div>
+        <div style="font-size: 0.5em; color: #888;">v8.6 Styles</div>
     </div>
     
     <div id="notification-area"></div>
@@ -306,22 +350,97 @@
 
     <!-- Lobby UI -->
     <div id="lobby-ui">
-        <h1 style="margin-bottom: 0;">TUMBLE DUDES</h1>
+        <h1 style="margin-bottom: 0; text-shadow: 0 0 10px #ff00ff;">TUMBLE DUDES</h1>
         
-        <div id="auth-status" style="margin-bottom: 20px; color: #00ffff;">Ready to Connect</div>
+        <div id="auth-status" style="margin-bottom: 10px; color: #00ffff; font-size: 0.9em;">Ready to Connect</div>
 
         <!-- Main Menu -->
         <div id="main-menu" class="panel">
-            <input type="text" id="username-input" placeholder="USERNAME" maxlength="10">
-            <div style="border-top: 1px solid #444; width: 100%; margin: 20px 0;"></div>
-            <button class="btn-primary" onclick="createLobby()">HOST GAME</button>
-            <div style="margin: 15px 0; color: #aaa;">- OR -</div>
-            <input type="text" id="code-input" placeholder="ENTER HOST CODE">
-            <button class="btn-primary" onclick="joinLobby()">JOIN GAME</button>
-            <div style="margin-top: 20px; font-size: 0.75em; color: #888; max-width: 300px; line-height: 1.4;">
-                🛡️ If connection fails: Disable browser tracking protection or try Incognito mode
+            <input type="text" id="username-input" placeholder="ENTER USERNAME" maxlength="12">
+            
+            <!-- Character Creation UI -->
+            <div id="character-creator">
+                <!-- Left Column: Body Options -->
+                <div class="cc-column">
+                    <div class="creator-row">
+                        <label>Skin</label>
+                        <div class="selector-control">
+                            <button class="arrow-btn" onclick="cycleOption('skin', -1)">◀</button>
+                            <div id="swatch-skin" class="color-display"></div>
+                            <button class="arrow-btn" onclick="cycleOption('skin', 1)">▶</button>
+                        </div>
+                    </div>
+                    <div class="creator-row">
+                        <label>Hair</label>
+                        <div class="selector-control">
+                            <button class="arrow-btn" onclick="cycleOption('hair', -1)">◀</button>
+                            <div id="swatch-hair" class="color-display"></div>
+                            <button class="arrow-btn" onclick="cycleOption('hair', 1)">▶</button>
+                        </div>
+                    </div>
+                    <!-- New Hair Style Selector -->
+                    <div class="creator-row">
+                        <label>Style</label>
+                        <div class="selector-control">
+                            <button class="arrow-btn" onclick="cycleOption('hairStyle', -1)">◀</button>
+                            <div id="text-hairStyle" class="color-display" style="width: 50px; font-size: 0.6em;">STD</div>
+                            <button class="arrow-btn" onclick="cycleOption('hairStyle', 1)">▶</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Center Column: Preview -->
+                <div class="cc-column-center">
+                    <div id="char-preview-container">
+                        <!-- ThreeJS Canvas will be injected here -->
+                    </div>
+                    <button class="btn-secondary" onclick="randomizeCharacter()">🎲 Randomize</button>
+                </div>
+
+                <!-- Right Column: Clothing Options -->
+                <div class="cc-column">
+                    <div class="creator-row">
+                        <label>Shirt</label>
+                        <div class="selector-control">
+                            <button class="arrow-btn" onclick="cycleOption('shirt', -1)">◀</button>
+                            <div id="swatch-shirt" class="color-display"></div>
+                            <button class="arrow-btn" onclick="cycleOption('shirt', 1)">▶</button>
+                        </div>
+                    </div>
+                    <div class="creator-row">
+                        <label>Pants</label>
+                        <div class="selector-control">
+                            <button class="arrow-btn" onclick="cycleOption('pants', -1)">◀</button>
+                            <div id="swatch-pants" class="color-display"></div>
+                            <button class="arrow-btn" onclick="cycleOption('pants', 1)">▶</button>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div style="margin-top: 10px; font-size: 0.7em; color: #666;">v7.2</div>
+
+            <div style="border-top: 1px solid #444; width: 100%; margin: 5px 0;"></div>
+
+            <!-- Action Controls -->
+            <div class="action-row">
+                <div class="action-col">
+                    <div style="font-size:0.8em; color:#888; text-transform:uppercase; letter-spacing:1px;">Start New</div>
+                    <button class="btn-primary" onclick="createLobby()">HOST GAME</button>
+                </div>
+                
+                <div class="separator-vert"></div>
+                
+                <div class="action-col" style="flex: 1.5;">
+                    <div style="font-size:0.8em; color:#888; text-transform:uppercase; letter-spacing:1px;">Join Existing</div>
+                    <div class="join-group">
+                        <input type="text" id="code-input" placeholder="HOST CODE" style="background: rgba(0,0,0,0.3);">
+                        <button class="btn-primary" onclick="joinLobby()">JOIN</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="margin-top: 15px; font-size: 0.7em; color: #666;">
+                v8.7
+            </div>
         </div>
 
         <!-- Wait Room -->
@@ -372,20 +491,141 @@
     </div>
 
     <script>
-        // --- PLAYER COLORS ---
-        const PLAYER_COLORS = [
-            0x00ff00, // Green
-            0xff0000, // Red
-            0x0088ff, // Blue
-            0xffff00, // Yellow
-            0xff00ff, // Magenta
-            0x00ffff  // Cyan
-        ];
-        
-        const PLAYER_COLOR_NAMES = [
-            "Green", "Red", "Blue", "Yellow", "Magenta", "Cyan"
-        ];
-        
+        // --- COLOR PALETTES & OPTIONS ---
+        const PALETTES = {
+            skin: ['#ffccaa', '#8d5524', '#c68642', '#e0ac69', '#f1c27d', '#ffdbac', '#5c3a21', '#9eff9e', '#9ecaff', '#ca9eff'],
+            hair: ['#442200', '#000000', '#e6be8a', '#8d5524', '#ff0000', '#aaaaaa', '#ffffff', '#00ff00', '#0000ff', '#ff00ff'],
+            shirt: ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#00ffff', '#ff00ff', '#ffffff', '#000000', '#ff8800', '#8800ff'],
+            pants: ['#0000ff', '#000000', '#555555', '#ffffff', '#654321', '#004400', '#440000', '#ffcc00', '#00ffff', '#ff00ff']
+        };
+
+        const HAIR_STYLES = ['Standard', 'Spiky', 'Mohawk', 'Bob', 'Bald'];
+
+        let myCostume = {
+            skin: 0, // Indices now
+            hair: 0,
+            shirt: 0,
+            pants: 0,
+            hairStyle: 0
+        };
+
+        // --- PREVIEW VARIABLES ---
+        let previewScene, previewCamera, previewRenderer, previewMesh;
+        let isPreviewInit = false;
+
+        function initPreview() {
+            if(isPreviewInit) return;
+            const container = document.getElementById('char-preview-container');
+            const w = container.clientWidth;
+            const h = container.clientHeight;
+
+            previewScene = new THREE.Scene();
+            previewScene.background = new THREE.Color(0x333333); // Dark grey background for preview
+
+            previewCamera = new THREE.PerspectiveCamera(50, w / h, 0.1, 100);
+            previewCamera.position.set(0, 1.2, 3);
+            previewCamera.lookAt(0, 1, 0);
+
+            previewRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            previewRenderer.setSize(w, h);
+            previewRenderer.setClearColor(0x000000, 0); // Transparent
+            container.appendChild(previewRenderer.domElement);
+
+            // Lighting for preview
+            const amb = new THREE.AmbientLight(0xffffff, 0.6);
+            previewScene.add(amb);
+            const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+            dir.position.set(2, 5, 5);
+            previewScene.add(dir);
+
+            updatePreviewCharacter();
+            animatePreview();
+            isPreviewInit = true;
+            
+            // Mouse/Touch Rotation Control
+            let isDragging = false;
+            let previousMouseX = 0;
+            
+            container.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                previousMouseX = e.clientX;
+            });
+            
+            window.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+            
+            window.addEventListener('mousemove', (e) => {
+                if(isDragging && previewMesh) {
+                    const deltaX = e.clientX - previousMouseX;
+                    previewMesh.rotation.y += deltaX * 0.01;
+                    previousMouseX = e.clientX;
+                }
+            });
+            
+            // Initial UI Update
+            updateSwatch('skin');
+            updateSwatch('hair');
+            updateSwatch('shirt');
+            updateSwatch('pants');
+            updateSwatch('hairStyle');
+        }
+
+        function updatePreviewCharacter() {
+            if(previewMesh) {
+                previewScene.remove(previewMesh);
+            }
+            // Get hex codes
+            const costumeData = {
+                skin: PALETTES.skin[myCostume.skin],
+                hair: PALETTES.hair[myCostume.hair],
+                shirt: PALETTES.shirt[myCostume.shirt],
+                pants: PALETTES.pants[myCostume.pants],
+                hairStyle: myCostume.hairStyle
+            };
+            
+            previewMesh = createHumanoid(costumeData, null); // No name for preview
+            previewMesh.position.set(0, 0, 0);
+            previewScene.add(previewMesh);
+        }
+
+        function animatePreview() {
+            requestAnimationFrame(animatePreview);
+            // No auto-rotation anymore
+            if(previewRenderer) {
+                previewRenderer.render(previewScene, previewCamera);
+            }
+        }
+
+        function cycleOption(type, dir) {
+            let len;
+            if(type === 'hairStyle') len = HAIR_STYLES.length;
+            else len = PALETTES[type].length;
+            
+            myCostume[type] = (myCostume[type] + dir + len) % len;
+            updateSwatch(type);
+            updatePreviewCharacter();
+        }
+
+        function updateSwatch(type) {
+            if(type === 'hairStyle') {
+                document.getElementById('text-hairStyle').innerText = HAIR_STYLES[myCostume.hairStyle].substring(0,4).toUpperCase();
+                return;
+            }
+            const color = PALETTES[type][myCostume[type]];
+            document.getElementById(`swatch-${type}`).style.backgroundColor = color;
+        }
+
+        function randomizeCharacter() {
+            ['skin', 'hair', 'shirt', 'pants'].forEach(type => {
+                myCostume[type] = Math.floor(Math.random() * PALETTES[type].length);
+                updateSwatch(type);
+            });
+            myCostume.hairStyle = Math.floor(Math.random() * HAIR_STYLES.length);
+            updateSwatch('hairStyle');
+            updatePreviewCharacter();
+        }
+
         // --- PEERJS CONFIG ---
         let peer = null;
         let connections = [];
@@ -393,7 +633,6 @@
         
         let myId = null;
         let myUsername = "Bean";
-        let myColorIndex = 0;
         let isHost = false;
         
         // Ping tracking
@@ -440,67 +679,31 @@
         // Sound effect cooldowns
         let lastCollisionSound = 0;
 
-        // Fixed timestep for consistent physics with interpolation for any display refresh rate
-        let lastPhysicsTime = performance.now(); // For tracking actual elapsed time for physics
+        // Fixed timestep
+        let lastPhysicsTime = performance.now();
         let accumulator = 0;
-        const fixedTimeStep = 1/60; // 60 FPS physics
-        const CAMERA_SMOOTHING_BASE = 0.9; // Base value for time-based camera lerp smoothing
-        // Previous-state storage for physics interpolation
+        const fixedTimeStep = 1/60; 
+        const CAMERA_SMOOTHING_BASE = 0.9;
         let prevPlayerPos = { x: 0, y: 0, z: 0 };
         let prevObstacleStates = [];
 
         // --- COMMENTARY PHRASES ---
         const COMMENTARY = {
-            start: [
-                "And they're off!",
-                "Let the tumbling begin!",
-                "It's race time, folks!",
-                "Who will reach the finish first?"
-            ],
-            checkpoint: [
-                "Checkpoint secured!",
-                "Halfway there!",
-                "What a recovery!",
-                "Crushing it so far!"
-            ],
-            fall: [
-                "Ouch! That's gonna hurt!",
-                "Down they go!",
-                "Back to the checkpoint!",
-                "That looked painful!"
-            ],
-            finish: [
-                "They've crossed the line!",
-                "What an incredible run!",
-                "Ladies and gentlemen, we have a finisher!",
-                "That's how it's done!"
-            ]
+            start: ["And they're off!", "Let the tumbling begin!", "It's race time!", "Who will reach the finish first?"],
+            checkpoint: ["Checkpoint secured!", "Halfway there!", "What a recovery!", "Crushing it so far!"],
+            fall: ["Ouch! That's gonna hurt!", "Down they go!", "Back to the checkpoint!", "That looked painful!"],
+            finish: ["They've crossed the line!", "What an incredible run!", "Ladies and gentlemen, we have a finisher!", "That's how it's done!"]
         };
 
         // --- SOUND EFFECTS ---
         function playSoundEffect(type) {
             if (!audioCtx || isMuted) return;
-            
             switch(type) {
-                case 'jump':
-                    playTone(400, 0.1, 'sine', 0.15);
-                    setTimeout(() => playTone(600, 0.08, 'sine', 0.1), 50);
-                    break;
-                case 'collision':
-                    playTone(100, 0.2, 'sawtooth', 0.2);
-                    break;
-                case 'finish':
-                    playTone(523, 0.15, 'sine', 0.2);
-                    setTimeout(() => playTone(659, 0.15, 'sine', 0.2), 150);
-                    setTimeout(() => playTone(784, 0.3, 'sine', 0.2), 300);
-                    break;
-                case 'countdown':
-                    playTone(800, 0.1, 'square', 0.15);
-                    break;
-                case 'go':
-                    playTone(1000, 0.2, 'sine', 0.2);
-                    setTimeout(() => playTone(1200, 0.3, 'sine', 0.2), 100);
-                    break;
+                case 'jump': playTone(400, 0.1, 'sine', 0.15); setTimeout(() => playTone(600, 0.08, 'sine', 0.1), 50); break;
+                case 'collision': playTone(100, 0.2, 'sawtooth', 0.2); break;
+                case 'finish': playTone(523, 0.15, 'sine', 0.2); setTimeout(() => playTone(659, 0.15, 'sine', 0.2), 150); setTimeout(() => playTone(784, 0.3, 'sine', 0.2), 300); break;
+                case 'countdown': playTone(800, 0.1, 'square', 0.15); break;
+                case 'go': playTone(1000, 0.2, 'sine', 0.2); setTimeout(() => playTone(1200, 0.3, 'sine', 0.2), 100); break;
             }
         }
 
@@ -511,24 +714,16 @@
             notif.className = 'notification';
             notif.textContent = message;
             notifArea.appendChild(notif);
-            
-            setTimeout(() => {
-                notif.remove();
-            }, duration);
+            setTimeout(() => { notif.remove(); }, duration);
         }
 
         // --- NETWORK FUNCTIONS ---
-
         function createLobby() {
-            if (typeof Peer === 'undefined') {
-                alert('PeerJS library not loaded yet. Please wait a moment and try again.');
-                return;
-            }
+            if (typeof Peer === 'undefined') { alert('PeerJS library not loaded yet.'); return; }
             
             const username = document.getElementById('username-input').value || "Host Dude";
             myUsername = username;
             isHost = true;
-            myColorIndex = 0; // Host is always first color
             
             const code = Math.floor(1000 + Math.random() * 9000).toString();
             const peerId = "tumble-" + code;
@@ -537,10 +732,7 @@
         }
 
         function joinLobby() {
-            if (typeof Peer === 'undefined') {
-                alert('PeerJS library not loaded yet. Please wait a moment and try again.');
-                return;
-            }
+            if (typeof Peer === 'undefined') { alert('PeerJS library not loaded yet.'); return; }
             
             const username = document.getElementById('username-input').value || "Guest Dude";
             myUsername = username;
@@ -555,71 +747,53 @@
         function copyInviteLink() {
             const code = document.getElementById('lobby-code-display').innerText;
             if(!code || code === "??????") return;
-            
             const baseUrl = window.location.href.split('?')[0];
             const url = baseUrl + '?code=' + code;
-            
             navigator.clipboard.writeText(url).then(() => {
                 const btn = document.getElementById('invite-btn');
                 const orig = btn.innerText;
                 btn.innerText = "✅ LINK COPIED!";
                 btn.style.background = "linear-gradient(135deg, #44cc44, #228822)";
-                setTimeout(() => {
-                    btn.innerText = orig;
-                    btn.style.background = "";
-                }, 2000);
-            }).catch(err => {
-                console.error('Failed to copy: ', err);
-                alert("Invite Link: " + url);
-            });
+                setTimeout(() => { btn.innerText = orig; btn.style.background = ""; }, 2000);
+            }).catch(err => { alert("Invite Link: " + url); });
         }
 
         function initPeer(customId, lobbyCode) {
             document.getElementById('loading-overlay').style.display = 'flex';
             
-            // Set a timeout to detect hung connections
             const connectionTimeout = setTimeout(() => {
                 if(peer && !peer.id) {
                     document.getElementById('loading-overlay').style.display = 'none';
-                    alert(`Connection timeout!\n\nThis usually means your browser is blocking the connection.\n\n` +
-                          `Try:\n` +
-                          `1. Disable tracking protection/shields for this site\n` +
-                          `2. Open in Incognito/Private window\n` +
-                          `3. Try a different browser (Chrome, Edge, Safari)`);
+                    alert(`Connection timeout! Check firewall settings.`);
                     if(peer) peer.destroy();
                     peer = null;
                     backToMenu();
                 }
-            }, 15000); // 15 second timeout
+            }, 15000);
             
-            // Explicit configuration for better compatibility
             peer = new Peer(customId, {
-                host: '0.peerjs.com',
-                secure: true,
-                port: 443,
-                path: '/',
-                config: {
-                    iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun1.l.google.com:19302' }
-                    ]
-                },
+                host: '0.peerjs.com', secure: true, port: 443, path: '/',
+                config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] },
                 debug: 1
             });
 
             peer.on('open', (id) => {
-                clearTimeout(connectionTimeout); // Connection successful
+                clearTimeout(connectionTimeout);
                 myId = id;
                 document.getElementById('loading-overlay').style.display = 'none';
                 
+                // Construct the costume object with HEX values for network transmission
+                const costumeToSend = {
+                    skin: PALETTES.skin[myCostume.skin],
+                    hair: PALETTES.hair[myCostume.hair],
+                    shirt: PALETTES.shirt[myCostume.shirt],
+                    pants: PALETTES.pants[myCostume.pants],
+                    hairStyle: myCostume.hairStyle
+                };
+                
                 if(isHost) {
                     enterLobbyUI(lobbyCode);
-                    window.opponentsData[myId] = { 
-                        username: myUsername, 
-                        isHost: true,
-                        colorIndex: myColorIndex,
-                        ready: false
-                    };
+                    window.opponentsData[myId] = { username: myUsername, isHost: true, costume: costumeToSend, ready: false };
                     updateLobbyList();
                     startPingLoop();
                 } else {
@@ -628,38 +802,26 @@
                     
                     hostConn.on('open', () => {
                         console.log("Connected to Host!");
-                        hostConn.send({ type: 'join', username: myUsername });
+                        hostConn.send({ type: 'join', username: myUsername, costume: costumeToSend });
                         enterLobbyUI(lobbyCode);
                         startPingLoop();
                     });
 
                     hostConn.on('data', handleDataFromHost);
-                    hostConn.on('close', () => { 
-                        showNotification("Host disconnected!");
-                        setTimeout(() => backToMenu(), 2000);
-                    });
-                    hostConn.on('error', (err) => { 
-                        alert("Connection Error: " + err); 
-                        backToMenu(); 
-                    });
+                    hostConn.on('close', () => { showNotification("Host disconnected!"); setTimeout(() => backToMenu(), 2000); });
+                    hostConn.on('error', (err) => { alert("Connection Error: " + err); backToMenu(); });
                 }
             });
 
             peer.on('connection', (conn) => {
                 if(!isHost) return;
-
                 conn.on('open', () => {
                     connections.push(conn);
                     conn.send({ type: 'state_update', players: window.opponentsData });
                 });
-
                 conn.on('data', (data) => handleDataFromClient(data, conn.peer));
-                
                 conn.on('close', () => {
-                    const disconnectedPlayer = window.opponentsData[conn.peer];
-                    if(disconnectedPlayer) {
-                        showNotification(`${disconnectedPlayer.username} disconnected`);
-                    }
+                    if(window.opponentsData[conn.peer]) showNotification(`${window.opponentsData[conn.peer].username} disconnected`);
                     delete window.opponentsData[conn.peer];
                     connections = connections.filter(c => c.peer !== conn.peer);
                     updateLobbyList();
@@ -668,31 +830,10 @@
             });
 
             peer.on('error', (err) => {
-                clearTimeout(connectionTimeout); // Clear timeout
+                clearTimeout(connectionTimeout);
                 document.getElementById('loading-overlay').style.display = 'none';
                 console.error('Peer error:', err);
-                
-                let errorMsg = "Network Error: ";
-                
-                if(err.type === 'unavailable-id') {
-                    errorMsg = "Lobby Code already taken. Try again.";
-                } else if(err.type === 'network' || err.message?.includes('NS_ERROR_CONTENT_BLOCKED')) {
-                    errorMsg = `Connection blocked by browser!\n\n` +
-                              `Firefox users: Disable Enhanced Tracking Protection for this site:\n` +
-                              `1. Click the shield icon in the address bar\n` +
-                              `2. Turn off "Enhanced Tracking Protection"\n` +
-                              `3. Refresh the page\n\n` +
-                              `Chrome users: Check if any extensions are blocking connections.\n\n` +
-                              `Alternative: Try opening in an Incognito/Private window.`;
-                } else if(err.type === 'peer-unavailable') {
-                    errorMsg = "Could not find that lobby code. Check the code and try again.";
-                } else if(err.type === 'server-error') {
-                    errorMsg = "PeerJS server is unavailable. Please try again in a moment.";
-                } else {
-                    errorMsg += err.type || err.message || "Unknown error";
-                }
-                
-                alert(errorMsg);
+                alert("Network Error: " + (err.type || err.message));
                 backToMenu();
             });
         }
@@ -701,13 +842,9 @@
         function startPingLoop() {
             setInterval(() => {
                 if(!gameActive) return;
-                
                 lastPingTime = Date.now();
-                
                 if(isHost) {
-                    connections.forEach(c => {
-                        c.send({ type: 'ping', timestamp: Date.now() });
-                    });
+                    connections.forEach(c => { c.send({ type: 'ping', timestamp: Date.now() }); });
                 } else if(hostConn && hostConn.open) {
                     hostConn.send({ type: 'pong', timestamp: Date.now() });
                 }
@@ -716,23 +853,15 @@
         
         function updatePingDisplay() {
             if(!gameActive) return;
-            
             const pingIndicator = document.getElementById('ping-indicator');
             const pingText = document.getElementById('ping-text');
             const pingDot = pingIndicator.querySelector('.ping-dot');
-            
             pingIndicator.style.display = 'flex';
             pingText.textContent = `${currentPing} ms`;
-            
-            // Update color based on ping
             pingDot.className = 'ping-dot';
-            if(currentPing < 100) {
-                pingDot.classList.add('ping-good');
-            } else if(currentPing < 200) {
-                pingDot.classList.add('ping-medium');
-            } else {
-                pingDot.classList.add('ping-bad');
-            }
+            if(currentPing < 100) pingDot.classList.add('ping-good');
+            else if(currentPing < 200) pingDot.classList.add('ping-medium');
+            else pingDot.classList.add('ping-bad');
         }
 
         // --- HOST LOGIC ---
@@ -740,35 +869,19 @@
             if(data.type === 'join') {
                 if(Object.keys(window.opponentsData).length >= 6) return;
                 
-                // Assign next available color
-                const usedColors = Object.values(window.opponentsData).map(p => p.colorIndex);
-                let colorIndex = 0;
-                for(let i = 0; i < PLAYER_COLORS.length; i++) {
-                    if(!usedColors.includes(i)) {
-                        colorIndex = i;
-                        break;
-                    }
-                }
+                const costume = data.costume || { skin:'#ffccaa', hair:'#000000', shirt:'#888888', pants:'#333333', hairStyle: 0 };
                 
                 window.opponentsData[clientId] = { 
-                    username: data.username, 
-                    isHost: false,
-                    colorIndex: colorIndex,
-                    ready: false,
+                    username: data.username, isHost: false, costume: costume, ready: false,
                     x: -5, y: 5, z: 0, rot: 0, finished: false
                 };
                 
-                // Unready all players when a new player joins
-                for (const pid in window.opponentsData) {
-                    window.opponentsData[pid].ready = false;
-                }
+                for (const pid in window.opponentsData) window.opponentsData[pid].ready = false;
                 
                 updateLobbyList();
                 broadcastState();
             } else if (data.type === 'pos') {
-                if(window.opponentsData[clientId]) {
-                    Object.assign(window.opponentsData[clientId], data.state);
-                }
+                if(window.opponentsData[clientId]) Object.assign(window.opponentsData[clientId], data.state);
             } else if (data.type === 'ready') {
                 if(window.opponentsData[clientId]) {
                     window.opponentsData[clientId].ready = data.ready;
@@ -776,9 +889,7 @@
                     broadcastState();
                 }
             } else if (data.type === 'pong') {
-                // Client responded to ping
-                const rtt = Date.now() - data.timestamp;
-                // Could track per-client ping if needed
+                // Keep-alive/ping
             }
         }
 
@@ -791,29 +902,14 @@
         function handleDataFromHost(data) {
             if (data.type === 'state_update') {
                 window.opponentsData = data.players;
-                
-                // Set our color from host assignment
-                if(window.opponentsData[myId]) {
-                    myColorIndex = window.opponentsData[myId].colorIndex;
-                }
-                
                 updateLobbyList();
             } else if (data.type === 'start_game') {
                 startCountdown(data.level);
             } else if (data.type === 'ping') {
-                // Respond to host ping
                 const rtt = Date.now() - data.timestamp;
                 currentPing = rtt;
-                pingHistory.push(rtt);
-                if(pingHistory.length > 5) pingHistory.shift();
-                
-                // Calculate average
-                currentPing = Math.round(pingHistory.reduce((a,b) => a+b, 0) / pingHistory.length);
                 updatePingDisplay();
-                
-                if(hostConn && hostConn.open) {
-                    hostConn.send({ type: 'pong', timestamp: data.timestamp });
-                }
+                if(hostConn && hostConn.open) hostConn.send({ type: 'pong', timestamp: data.timestamp });
             }
         }
 
@@ -822,16 +918,12 @@
             document.getElementById('main-menu').style.display = 'none';
             document.getElementById('wait-room').style.display = 'flex';
             document.getElementById('lobby-code-display').innerText = code;
-            
             const startBtn = document.getElementById('start-btn');
             const waitText = document.getElementById('wait-text');
-
             if(isHost) {
-                startBtn.style.display = 'block';
-                waitText.style.display = 'none';
+                startBtn.style.display = 'block'; waitText.style.display = 'none';
             } else {
-                startBtn.style.display = 'none';
-                waitText.style.display = 'block';
+                startBtn.style.display = 'none'; waitText.style.display = 'block';
             }
         }
 
@@ -842,126 +934,78 @@
             const readyBtn = document.getElementById('ready-btn');
             
             list.innerHTML = '';
-            let count = 0;
-            let allReady = true;
+            let count = 0; let allReady = true;
             
             for(const pid in window.opponentsData) {
                 const p = window.opponentsData[pid];
                 const li = document.createElement('li');
                 
-                const colorDot = document.createElement('span');
-                colorDot.className = 'player-color-dot';
-                colorDot.style.backgroundColor = `#${PLAYER_COLORS[p.colorIndex].toString(16).padStart(6, '0')}`;
-                
-                li.appendChild(colorDot);
-                
+                // Show shirt color as icon
+                const icon = document.createElement('span');
+                icon.className = 'player-icon';
+                const shirtC = (p.costume && p.costume.shirt) ? p.costume.shirt : '#888';
+                icon.style.backgroundColor = shirtC;
+                li.appendChild(icon);
+
                 const nameSpan = document.createElement('span');
                 const readyIcon = p.ready ? '✓ ' : '';
                 nameSpan.innerText = `${readyIcon}${p.username} ${p.isHost ? '👑' : ''}`;
                 nameSpan.style.color = p.ready ? '#44cc44' : '#ffffff';
                 li.appendChild(nameSpan);
-                
                 list.appendChild(li);
                 count++;
-                
                 if (!p.ready) allReady = false;
             }
             
             document.getElementById('player-count').innerText = `${count} / 6 Players`;
-            
-            // Update ready button text and styling
             const myData = window.opponentsData[myId];
             if (myData && myData.ready) {
-                readyBtn.innerText = '✗ UNREADY';
-                readyBtn.style.background = '#cc4444';
+                readyBtn.innerText = '✗ UNREADY'; readyBtn.style.background = '#cc4444';
             } else {
-                readyBtn.innerText = '✓ READY UP';
-                readyBtn.style.background = '#44cc44';
+                readyBtn.innerText = '✓ READY UP'; readyBtn.style.background = '#44cc44';
             }
             
-            // Update button visibility and state
             if (isHost) {
-                // Single player: hide ready button, enable start button
                 if (count === 1) {
-                    readyBtn.style.display = 'none';
-                    startBtn.style.display = 'block';
-                    startBtn.disabled = false;
+                    readyBtn.style.display = 'none'; startBtn.style.display = 'block'; startBtn.disabled = false;
                 } else {
-                    // Multiplayer: show ready button, require all ready to start
-                    readyBtn.style.display = 'block';
-                    startBtn.style.display = 'block';
-                    startBtn.disabled = !allReady;
+                    readyBtn.style.display = 'block'; startBtn.style.display = 'block'; startBtn.disabled = !allReady;
                 }
             } else {
-                readyBtn.style.display = 'block';
-                startBtn.style.display = 'none';
+                readyBtn.style.display = 'block'; startBtn.style.display = 'none';
             }
-            
-            // Show waiting message if solo
-            if(isHost && count === 1) {
-                waitingMsg.style.display = 'block';
-            } else {
-                waitingMsg.style.display = 'none';
-            }
+            waitingMsg.style.display = (isHost && count === 1) ? 'block' : 'none';
         }
 
         function toggleReady() {
             if (!myId || !window.opponentsData[myId]) return;
-            
             const newReadyState = !window.opponentsData[myId].ready;
             window.opponentsData[myId].ready = newReadyState;
-            
-            if (isHost) {
-                // Host updates locally and broadcasts
-                updateLobbyList();
-                broadcastState();
-            } else {
-                // Client sends ready state to host
-                if (hostConn && hostConn.open) {
-                    hostConn.send({ type: 'ready', ready: newReadyState });
-                }
-                updateLobbyList();
-            }
+            if (isHost) { updateLobbyList(); broadcastState(); }
+            else if (hostConn && hostConn.open) { hostConn.send({ type: 'ready', ready: newReadyState }); updateLobbyList(); }
         }
 
         // --- COUNTDOWN SYSTEM ---
         function startCountdown(level) {
             if(isCountingDown) return;
             isCountingDown = true;
-            
-            // Prepare game but don't start yet
             document.getElementById('lobby-ui').style.display = 'none';
             document.getElementById('ui').style.display = 'block';
-            
-            window.startMultiplayerGame(level, false); // false = don't activate yet
-            
+            window.startMultiplayerGame(level, false); 
             const overlay = document.getElementById('countdown-overlay');
             overlay.style.display = 'flex';
-            
             let count = 3;
             overlay.textContent = count;
             overlay.classList.remove('go');
             playSoundEffect('countdown');
-            
             const countInterval = setInterval(() => {
                 count--;
                 if(count > 0) {
-                    overlay.textContent = count;
-                    playSoundEffect('countdown');
+                    overlay.textContent = count; playSoundEffect('countdown');
                 } else {
-                    overlay.textContent = 'GO!';
-                    overlay.classList.add('go');
-                    playSoundEffect('go');
-                    
-                    // Activate game
-                    window.gameActive = true;
-                    gameActive = true;
-                    
-                    setTimeout(() => {
-                        overlay.style.display = 'none';
-                        isCountingDown = false;
-                    }, 1000);
-                    
+                    overlay.textContent = 'GO!'; overlay.classList.add('go'); playSoundEffect('go');
+                    window.gameActive = true; gameActive = true;
+                    setTimeout(() => { overlay.style.display = 'none'; isCountingDown = false; }, 1000);
                     clearInterval(countInterval);
                 }
             }, 1000);
@@ -969,24 +1013,15 @@
 
         window.hostStartGame = function() {
             if(!isHost || isCountingDown) return;
-            
             const level = window.generateRandomLevelStructure(); 
-            
-            // Broadcast Start with countdown
             const msg = { type: 'start_game', level: level };
             connections.forEach(c => c.send(msg));
-            
-            // Start Local countdown
             startCountdown(level);
         }
 
         window.backToMenu = function() {
             if(peer) peer.destroy();
-            peer = null;
-            connections = [];
-            hostConn = null;
-            window.opponentsData = {};
-            
+            peer = null; connections = []; hostConn = null; window.opponentsData = {};
             document.getElementById('win-screen').style.display = 'none';
             document.getElementById('ui').style.display = 'none';
             document.getElementById('ping-indicator').style.display = 'none';
@@ -994,18 +1029,12 @@
             document.getElementById('main-menu').style.display = 'flex';
             document.getElementById('wait-room').style.display = 'none';
             document.getElementById('loading-overlay').style.display = 'none';
-            
-            window.gameActive = false;
-            gameActive = false;
-            isCountingDown = false;
-            window.clearLevel();
-            window.changeMusicTrack();
+            window.gameActive = false; gameActive = false; isCountingDown = false;
+            window.clearLevel(); window.changeMusicTrack();
         }
 
-        // --- NETWORK LOOP ---
         setInterval(() => {
             if(!window.gameActive || !myId) return;
-            
             if(window.playerBody) {
                 myState = {
                     x: parseFloat(window.playerBody.position.x.toFixed(2)),
@@ -1015,7 +1044,6 @@
                     finished: window.hasFinished
                 };
             }
-
             if(isHost) {
                 if(window.opponentsData[myId]) Object.assign(window.opponentsData[myId], myState);
                 broadcastState();
@@ -1024,7 +1052,6 @@
             }
         }, 50);
 
-        // --- EXPOSE GLOBALS ---
         window.createLobby = createLobby;
         window.joinLobby = joinLobby;
         window.hostStartGame = hostStartGame;
@@ -1032,145 +1059,103 @@
         window.copyInviteLink = copyInviteLink;
         window.backToMenu = backToMenu;
 
-        // --- LIBRARY LOADING CHECK ---
         function waitForLibraries() {
             return new Promise((resolve) => {
                 const statusDiv = document.getElementById('auth-status');
-                statusDiv.innerText = 'Loading libraries...';
-                statusDiv.style.color = '#ffaa00';
-                
+                statusDiv.innerText = 'Loading libraries...'; statusDiv.style.color = '#ffaa00';
                 const checkLibraries = () => {
-                    if (typeof THREE !== 'undefined' && 
-                        typeof CANNON !== 'undefined' && 
-                        typeof Peer !== 'undefined') {
-                        statusDiv.innerText = 'Ready to Connect ✓';
-                        statusDiv.style.color = '#44cc44';
-                        resolve();
-                    } else {
-                        console.log('Waiting for libraries...', {
-                            THREE: typeof THREE !== 'undefined',
-                            CANNON: typeof CANNON !== 'undefined',
-                            Peer: typeof Peer !== 'undefined'
-                        });
-                        setTimeout(checkLibraries, 100);
-                    }
+                    if (typeof THREE !== 'undefined' && typeof CANNON !== 'undefined' && typeof Peer !== 'undefined') {
+                        statusDiv.innerText = 'Ready to Connect ✓'; statusDiv.style.color = '#44cc44'; resolve();
+                    } else { setTimeout(checkLibraries, 100); }
                 };
                 checkLibraries();
             });
         }
 
-        // --- GAME INIT ---
         async function init() {
-            // Wait for all libraries to load
             await waitForLibraries();
             
             const urlParams = new URLSearchParams(window.location.search);
             const code = urlParams.get('code');
-            if(code) {
-                document.getElementById('code-input').value = code;
-                document.getElementById('username-input').focus();
-            }
+            if(code) { document.getElementById('code-input').value = code; document.getElementById('username-input').focus(); }
 
+            // Init Preview
+            initPreview();
+
+            // Main Game Scene Init
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x6a0dad); 
             scene.fog = new THREE.FogExp2(0x6a0dad, 0.006);
 
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
             document.body.appendChild(renderer.domElement);
 
-            const ambient = new THREE.AmbientLight(0xffffff, 0.5);
-            scene.add(ambient);
-            
+            const ambient = new THREE.AmbientLight(0xffffff, 0.5); scene.add(ambient);
             const sun = new THREE.DirectionalLight(0xffaa00, 0.8);
-            sun.position.set(50, 100, 50);
-            sun.castShadow = true;
-            scene.add(sun);
-
+            sun.position.set(50, 100, 50); sun.castShadow = true; scene.add(sun);
             const purpleLight = new THREE.PointLight(0xff00ff, 0.8, 200);
-            purpleLight.position.set(50, 50, 50);
-            scene.add(purpleLight);
+            purpleLight.position.set(50, 50, 50); scene.add(purpleLight);
 
             world = new CANNON.World();
             world.gravity.set(0, -30, 0); 
             world.broadphase = new CANNON.NaiveBroadphase();
             
             const defaultMaterial = new CANNON.Material('default');
-            const defaultContactMaterial = new CANNON.ContactMaterial(defaultMaterial, defaultMaterial, {
-                friction: 0.3,
-                restitution: 0.1,
-            });
+            const defaultContactMaterial = new CANNON.ContactMaterial(defaultMaterial, defaultMaterial, { friction: 0.3, restitution: 0.1 });
             world.addContactMaterial(defaultContactMaterial);
 
             createBackgroundScenery(); 
             
             window.addEventListener('keydown', (e) => { 
-                let key = e.key.toLowerCase();
-                if (key === ' ') key = 'space'; 
+                let key = e.key.toLowerCase(); if (key === ' ') key = 'space'; 
                 if(keys.hasOwnProperty(key)) keys[key] = true; 
             });
             window.addEventListener('keyup', (e) => { 
-                let key = e.key.toLowerCase();
-                if (key === ' ') key = 'space';
+                let key = e.key.toLowerCase(); if (key === ' ') key = 'space';
                 if(keys.hasOwnProperty(key)) keys[key] = false; 
             });
             window.addEventListener('resize', onWindowResize);
-
             document.addEventListener('click', () => {
                 if (!audioCtx) initAudio();
-                if (window.gameActive && !isPointerLocked && !isCountingDown) {
-                    document.body.requestPointerLock();
-                }
+                if (window.gameActive && !isPointerLocked && !isCountingDown) document.body.requestPointerLock();
             });
-
-            document.addEventListener('pointerlockchange', () => {
-                isPointerLocked = document.pointerLockElement === document.body;
-            });
-
-            document.addEventListener('mousemove', (e) => {
-                if (isPointerLocked) {
-                    cameraAngle += e.movementX * 0.002;
-                }
-            });
+            document.addEventListener('pointerlockchange', () => { isPointerLocked = document.pointerLockElement === document.body; });
+            document.addEventListener('mousemove', (e) => { if (isPointerLocked) cameraAngle += e.movementX * 0.002; });
             
             animate();
         }
 
         window.startMultiplayerGame = function(levelSegments, activate = true) {
             document.getElementById('win-screen').style.display = 'none';
-            clearLevel();
-            createBackgroundScenery(); 
-            buildLevelFromSegments(levelSegments);
-            createPlayer();
+            clearLevel(); createBackgroundScenery(); buildLevelFromSegments(levelSegments); 
             
-            if(activate) {
-                window.gameActive = true;
-                gameActive = true;
-            }
+            // Generate costume from HEX values since game logic now uses HEX
+            const costumeHex = {
+                skin: PALETTES.skin[myCostume.skin],
+                hair: PALETTES.hair[myCostume.hair],
+                shirt: PALETTES.shirt[myCostume.shirt],
+                pants: PALETTES.pants[myCostume.pants],
+                hairStyle: myCostume.hairStyle
+            };
             
-            window.hasFinished = false;
-            hasFinished = false;
+            createPlayer(costumeHex);
             
+            if(activate) { window.gameActive = true; gameActive = true; }
+            window.hasFinished = false; hasFinished = false;
             if (!audioCtx) initAudio();
             window.changeMusicTrack(); 
-            
-            if(activate) {
-                updateCommentary('start');
-            }
+            if(activate) updateCommentary('start');
         }
 
-        // --- Audio System ---
         const musicTracks = [
             { name: "Funky Bean", tempo: 250, bass: [110, 110, 130, 146, 110, 110, 98, 98], melody: [440, 0, 523, 440, 0, 587, 523, 0], bassType: 'triangle', melodyType: 'square' },
             { name: "Hyper Space", tempo: 200, bass: [65, 0, 65, 0, 73, 0, 73, 0], melody: [523, 523, 784, 0, 659, 0, 523, 0], bassType: 'sawtooth', melodyType: 'sawtooth' },
             { name: "Retro Dash", tempo: 280, bass: [87, 87, 98, 98, 110, 110, 130, 0], melody: [698, 0, 659, 0, 587, 587, 523, 0], bassType: 'square', melodyType: 'triangle' }
         ];
-        window.changeMusicTrack = function() {
-            currentTrack = musicTracks[Math.floor(Math.random() * musicTracks.length)];
-        }
+        window.changeMusicTrack = function() { currentTrack = musicTracks[Math.floor(Math.random() * musicTracks.length)]; }
         currentTrack = musicTracks[0];
 
         function initAudio() {
@@ -1192,14 +1177,11 @@
             if (!audioCtx || isMuted) return;
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
-            osc.type = type;
-            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
             gain.gain.setValueAtTime(vol, audioCtx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.start();
-            osc.stop(audioCtx.currentTime + duration);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + duration);
         }
 
         function startMusicLoop() {
@@ -1217,71 +1199,50 @@
             loop();
         }
 
-        // --- Visuals & Level ---
-
         function generateSkyboxTexture(theme) {
-            const canvas = document.createElement('canvas');
-            canvas.width = 1024; canvas.height = 512;
-            const ctx = canvas.getContext('2d');
-            const w = canvas.width; const h = canvas.height;
-
+            const canvas = document.createElement('canvas'); canvas.width = 1024; canvas.height = 512;
+            const ctx = canvas.getContext('2d'); const w = canvas.width; const h = canvas.height;
             if (theme === 0) {
-                const grad = ctx.createLinearGradient(0, 0, 0, h);
-                grad.addColorStop(0, '#000000'); grad.addColorStop(1, '#220033');
-                ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
-                ctx.fillStyle = '#ffffff';
+                const grad = ctx.createLinearGradient(0, 0, 0, h); grad.addColorStop(0, '#000000'); grad.addColorStop(1, '#220033');
+                ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h); ctx.fillStyle = '#ffffff';
                 for(let i=0; i<400; i++) { ctx.beginPath(); ctx.arc(Math.random()*w, Math.random()*h, Math.random()*1.5, 0, Math.PI*2); ctx.fill(); }
             } else if (theme === 1) {
-                const grad = ctx.createLinearGradient(0, 0, 0, h);
-                grad.addColorStop(0, '#00BFFF'); grad.addColorStop(1, '#FFFFFF');
+                const grad = ctx.createLinearGradient(0, 0, 0, h); grad.addColorStop(0, '#00BFFF'); grad.addColorStop(1, '#FFFFFF');
                 ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
             } else if (theme === 2) {
-                const grad = ctx.createLinearGradient(0, 0, 0, h);
-                grad.addColorStop(0, '#4B0082'); grad.addColorStop(0.5, '#FF4500'); grad.addColorStop(1, '#FFD700');
+                const grad = ctx.createLinearGradient(0, 0, 0, h); grad.addColorStop(0, '#4B0082'); grad.addColorStop(0.5, '#FF4500'); grad.addColorStop(1, '#FFD700');
                 ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
             } else {
-                const grad = ctx.createLinearGradient(0, 0, 0, h);
-                grad.addColorStop(0, '#000000'); grad.addColorStop(1, '#001133');
-                ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
-                ctx.strokeStyle = 'rgba(0, 255, 255, 0.5)'; ctx.lineWidth = 3;
+                const grad = ctx.createLinearGradient(0, 0, 0, h); grad.addColorStop(0, '#000000'); grad.addColorStop(1, '#001133');
+                ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h); ctx.strokeStyle = 'rgba(0, 255, 255, 0.5)'; ctx.lineWidth = 3;
                 for(let i=0; i<w; i+=150) { ctx.beginPath(); ctx.moveTo(w/2, h/2); ctx.lineTo(i, h); ctx.stroke(); }
             }
             return new THREE.CanvasTexture(canvas);
         }
 
         function createBackgroundScenery() {
-            backgroundObjects.forEach(obj => scene.remove(obj));
-            backgroundObjects = [];
+            backgroundObjects.forEach(obj => scene.remove(obj)); backgroundObjects = [];
             const theme = Math.floor(Math.random() * 4);
-            
             if (theme === 0) scene.background = new THREE.Color(0x110022);
             else if (theme === 1) scene.background = new THREE.Color(0x87CEFA);
             else if (theme === 2) scene.background = new THREE.Color(0x4B0082);
             else scene.background = new THREE.Color(0x001133);
-
             const texture = generateSkyboxTexture(theme);
             const geo = new THREE.SphereGeometry(800, 60, 40);
             const mat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide, fog: false });
-            const skybox = new THREE.Mesh(geo, mat);
-            scene.add(skybox);
-            backgroundObjects.push(skybox);
+            const skybox = new THREE.Mesh(geo, mat); scene.add(skybox); backgroundObjects.push(skybox);
         }
 
         window.generateRandomLevelStructure = function() {
             const types = ['path', 'narrow', 'hammers', 'tilts', 'walls', 'ramp_up', 'ramp_down', 'shift_left', 'shift_right', 'split_hammers_walls', 'split_ramp_tunnel'];
-            const length = 25 + Math.floor(Math.random() * 15); 
-            const level = ['start'];
-            for(let i=0; i<length; i++) {
-                level.push(types[Math.floor(Math.random() * types.length)]);
-            }
-            level.push('finish');
-            return level;
+            const length = 25 + Math.floor(Math.random() * 15); const level = ['start'];
+            for(let i=0; i<length; i++) { level.push(types[Math.floor(Math.random() * types.length)]); }
+            level.push('finish'); return level;
         }
 
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
         async function updateCommentary(eventType) {
@@ -1289,20 +1250,14 @@
             const now = Date.now();
             if(now - lastCommentaryTime < 8000 && eventType !== 'checkpoint') return;
             lastCommentaryTime = now;
-            
             const boxText = document.getElementById('commentary-text');
             const phrases = COMMENTARY[eventType] || [`${eventType}!`];
             const randomPhrase = phrases[Math.floor(Math.random() * phrases.length)];
-            
             boxText.innerText = randomPhrase;
             document.getElementById('commentary-box').style.opacity = 1;
-            
-            setTimeout(() => {
-                document.getElementById('commentary-box').style.opacity = 0;
-            }, 5000);
+            setTimeout(() => { document.getElementById('commentary-box').style.opacity = 0; }, 5000);
         }
 
-        // --- Level System ---
         let levelObjects = [];
         let currentPos = { x: -5, y: -0.5, z: 0 };
         let levelMinY = -0.5;
@@ -1311,18 +1266,14 @@
             const geo = new THREE.BoxGeometry(w, h, d);
             const mat = new THREE.MeshPhongMaterial({ color });
             const mesh = new THREE.Mesh(geo, mat);
-            mesh.position.set(x, y, z);
-            mesh.rotation.set(rotX, rotY, rotZ);
-            mesh.castShadow = true; mesh.receiveShadow = true;
-            scene.add(mesh);
+            mesh.position.set(x, y, z); mesh.rotation.set(rotX, rotY, rotZ);
+            mesh.castShadow = true; mesh.receiveShadow = true; scene.add(mesh);
             const shape = new CANNON.Box(new CANNON.Vec3(w/2, h/2, d/2));
             const body = new CANNON.Body({ mass: mass, material: world.defaultMaterial });
             body.addShape(shape); body.position.set(x, y, z);
             const q = new CANNON.Quaternion(); q.setFromEuler(rotX, rotY, rotZ); body.quaternion.copy(q);
             world.addBody(body);
-            const obj = { mesh, body, type: 'static' };
-            levelObjects.push(obj);
-            return obj;
+            const obj = { mesh, body, type: 'static' }; levelObjects.push(obj); return obj;
         }
 
         window.clearLevel = function() {
@@ -1338,18 +1289,15 @@
             const poleGeo = new THREE.CylinderGeometry(0.5, 0.5, 10);
             const poleMat = new THREE.MeshPhongMaterial({ color: 0x888888 });
             const pole = new THREE.Mesh(poleGeo, poleMat); pole.position.set(x, y + 5, z - 12); scene.add(pole);
-            const dummyBody = new CANNON.Body({ mass: 0 }); 
-            levelObjects.push({ mesh: pole, body: dummyBody });
+            const dummyBody = new CANNON.Body({ mass: 0 }); levelObjects.push({ mesh: pole, body: dummyBody });
             const flagGeo = new THREE.BoxGeometry(4, 3, 0.5);
             const flagMat = new THREE.MeshPhongMaterial({ color: 0xff0000 }); 
             const flag = new THREE.Mesh(flagGeo, flagMat); flag.position.set(x + 2, y + 8, z - 12); scene.add(flag);
-            levelObjects.push({ mesh: flag, body: dummyBody });
-            window.checkpointFlagMat = flagMat;
+            levelObjects.push({ mesh: flag, body: dummyBody }); window.checkpointFlagMat = flagMat;
         }
 
         function buildLevelFromSegments(segments) {
-            currentPos = { x: -5, y: -0.5, z: 0 };
-            levelMinY = -0.5;
+            currentPos = { x: -5, y: -0.5, z: 0 }; levelMinY = -0.5;
             const midIndex = Math.floor(segments.length / 2);
             segments.forEach((seg, index) => {
                 const baseColor = index % 2 === 0 ? 0xdddddd : 0xcccccc;
@@ -1377,10 +1325,9 @@
             });
         }
 
-        // --- Actors ---
-        function createFaceTexture() {
+        function createFaceTexture(skinColorHex) {
             const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 128; const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#ffccaa'; ctx.fillRect(0, 0, 128, 128); ctx.fillStyle = '#000000';
+            ctx.fillStyle = skinColorHex; ctx.fillRect(0, 0, 128, 128); ctx.fillStyle = '#000000';
             const eyeY = 50; const eyeXOffset = 20 + Math.random() * 15; const eyeSize = 8 + Math.random() * 10;
             ctx.beginPath(); ctx.arc(64 - eyeXOffset, eyeY, eyeSize, 0, Math.PI * 2); ctx.fill();
             ctx.beginPath(); ctx.arc(64 + eyeXOffset, eyeY, eyeSize, 0, Math.PI * 2); ctx.fill();
@@ -1395,73 +1342,146 @@
 
         function createNameSprite(name) {
             const canvas = document.createElement('canvas');
-            canvas.width = 256;
-            canvas.height = 64;
+            canvas.width = 512; canvas.height = 128;
             const ctx = canvas.getContext('2d');
             
-            // Background with semi-transparent black
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Reduced alpha background
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+            ctx.beginPath(); ctx.roundRect(10, 10, 492, 108, 20); ctx.fill();
             
-            // Text
-            ctx.font = 'bold 32px Arial';
-            ctx.fillStyle = '#ffffff';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
+            ctx.font = 'bold 50px Arial'; ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillText(name, canvas.width / 2, canvas.height / 2);
-            
             const texture = new THREE.CanvasTexture(canvas);
-            const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+            const spriteMaterial = new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false });
             const sprite = new THREE.Sprite(spriteMaterial);
-            sprite.scale.set(2, 0.5, 1);
+            sprite.scale.set(6, 1.5, 1); sprite.renderOrder = 999;
             return sprite;
         }
 
-        function createHumanoid(color, name) {
+        function createHumanoid(costume, name) {
+            // Default fallbacks
+            const skinC = costume.skin || '#ffccaa';
+            const hairC = costume.hair || '#442200';
+            const shirtC = costume.shirt || '#ff0000';
+            const pantsC = costume.pants || '#0000ff';
+            const hairStyle = costume.hairStyle || 0;
+
             const group = new THREE.Group();
+
+            // Head (Skin)
             const headGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-            const skinMat = new THREE.MeshPhongMaterial({ color: 0xffccaa }); 
-            const faceTexture = createFaceTexture(); const faceMat = new THREE.MeshPhongMaterial({ color: 0xffccaa, map: faceTexture });
+            const skinMat = new THREE.MeshPhongMaterial({ color: skinC });
+            const faceTexture = createFaceTexture(skinC); 
+            const faceMat = new THREE.MeshPhongMaterial({ color: 0xffffff, map: faceTexture }); // Use white base so texture color shows true
             const headMaterials = [skinMat, skinMat, skinMat, skinMat, faceMat, skinMat];
-            const head = new THREE.Mesh(headGeo, headMaterials); head.position.y = 0.85; head.castShadow = true; group.add(head);
-            const bodyGeo = new THREE.BoxGeometry(0.6, 0.7, 0.35); const bodyMat = new THREE.MeshPhongMaterial({ color: color }); 
-            const body = new THREE.Mesh(bodyGeo, bodyMat); body.position.y = 0.2; body.castShadow = true; group.add(body);
-            const armGeo = new THREE.BoxGeometry(0.2, 0.7, 0.2); const armMat = new THREE.MeshPhongMaterial({ color: 0xffccaa });
+            const head = new THREE.Mesh(headGeo, headMaterials); 
+            head.position.y = 0.85; head.castShadow = true; group.add(head);
+
+            // Hair (Custom Color & Style)
+            const hairMat = new THREE.MeshPhongMaterial({ color: hairC });
+            
+            if (hairStyle === 0) { // Standard
+                const hairTopGeo = new THREE.BoxGeometry(0.55, 0.15, 0.55);
+                const hairTop = new THREE.Mesh(hairTopGeo, hairMat);
+                hairTop.position.y = 1.125; hairTop.castShadow = true; group.add(hairTop);
+                
+                const hairBackGeo = new THREE.BoxGeometry(0.55, 0.4, 0.15);
+                const hairBack = new THREE.Mesh(hairBackGeo, hairMat);
+                hairBack.position.set(0, 0.85, -0.22); hairBack.castShadow = true; group.add(hairBack);
+            } 
+            else if (hairStyle === 1) { // Spiky
+                const spikeGeo = new THREE.ConeGeometry(0.1, 0.3, 4);
+                // Center spike
+                const spike1 = new THREE.Mesh(spikeGeo, hairMat);
+                spike1.position.set(0, 1.25, 0); spike1.castShadow = true; group.add(spike1);
+                // Left spike
+                const spike2 = new THREE.Mesh(spikeGeo, hairMat);
+                spike2.position.set(-0.15, 1.2, 0); spike2.rotation.z = 0.3; spike2.castShadow = true; group.add(spike2);
+                // Right spike
+                const spike3 = new THREE.Mesh(spikeGeo, hairMat);
+                spike3.position.set(0.15, 1.2, 0); spike3.rotation.z = -0.3; spike3.castShadow = true; group.add(spike3);
+                // Base
+                const baseGeo = new THREE.BoxGeometry(0.52, 0.05, 0.52);
+                const base = new THREE.Mesh(baseGeo, hairMat);
+                base.position.y = 1.1; base.castShadow = true; group.add(base);
+            }
+            else if (hairStyle === 2) { // Mohawk
+                const mohawkGeo = new THREE.BoxGeometry(0.15, 0.4, 0.6);
+                const mohawk = new THREE.Mesh(mohawkGeo, hairMat);
+                mohawk.position.set(0, 1.2, 0); mohawk.castShadow = true; group.add(mohawk);
+            }
+            else if (hairStyle === 3) { // Bob
+                const topGeo = new THREE.BoxGeometry(0.6, 0.15, 0.6);
+                const top = new THREE.Mesh(topGeo, hairMat);
+                top.position.y = 1.125; top.castShadow = true; group.add(top);
+                
+                const sideLGeo = new THREE.BoxGeometry(0.1, 0.5, 0.5);
+                const sideL = new THREE.Mesh(sideLGeo, hairMat);
+                sideL.position.set(-0.28, 0.9, 0); sideL.castShadow = true; group.add(sideL);
+                
+                const sideRGeo = new THREE.BoxGeometry(0.1, 0.5, 0.5);
+                const sideR = new THREE.Mesh(sideRGeo, hairMat);
+                sideR.position.set(0.28, 0.9, 0); sideR.castShadow = true; group.add(sideR);
+                
+                const backGeo = new THREE.BoxGeometry(0.6, 0.5, 0.1);
+                const back = new THREE.Mesh(backGeo, hairMat);
+                back.position.set(0, 0.9, -0.28); back.castShadow = true; group.add(back);
+            }
+            // Style 4 is Bald (no mesh added)
+
+            // Body (Shirt)
+            const bodyGeo = new THREE.BoxGeometry(0.6, 0.7, 0.35); 
+            const bodyMat = new THREE.MeshPhongMaterial({ color: shirtC }); 
+            const body = new THREE.Mesh(bodyGeo, bodyMat); 
+            body.position.y = 0.2; body.castShadow = true; group.add(body);
+
+            // Arms (Skin) - could be shirt color for long sleeves, but let's keep as skin for now
+            const armGeo = new THREE.BoxGeometry(0.2, 0.7, 0.2); 
+            const armMat = new THREE.MeshPhongMaterial({ color: skinC });
+
             const armL = new THREE.Mesh(armGeo, armMat); armL.position.set(-0.45, 0.2, 0); armL.name = "armL"; armL.castShadow = true; group.add(armL);
             const armR = new THREE.Mesh(armGeo, armMat); armR.position.set(0.45, 0.2, 0); armR.name = "armR"; armR.castShadow = true; group.add(armR);
-            const legGeo = new THREE.BoxGeometry(0.22, 0.8, 0.22); const legMat = new THREE.MeshPhongMaterial({ color: 0x333333 }); 
+
+            // Legs (Pants)
+            const legGeo = new THREE.BoxGeometry(0.22, 0.8, 0.22); 
+            const legMat = new THREE.MeshPhongMaterial({ color: pantsC }); 
             const legL = new THREE.Mesh(legGeo, legMat); legL.position.set(-0.2, -0.6, 0); legL.name = "legL"; legL.castShadow = true; group.add(legL);
             const legR = new THREE.Mesh(legGeo, legMat); legR.position.set(0.2, -0.6, 0); legR.name = "legR"; legR.castShadow = true; group.add(legR);
             
-            // Add name sprite if name is provided
             if (name) {
                 const nameSprite = createNameSprite(name);
-                nameSprite.position.y = 1.6;
+                nameSprite.position.y = 2.8; // Raised higher to clear mohawks/spikes
                 nameSprite.name = "nameSprite";
                 group.add(nameSprite);
             }
-            
             return group;
         }
 
-        function createPlayer() {
-            const mesh = createHumanoid(PLAYER_COLORS[myColorIndex], myUsername); 
-            scene.add(mesh);
-            playerMesh = mesh; 
-            window.playerMesh = mesh;
+        function createPlayer(costumeOverride) {
+            const costumeToUse = costumeOverride || myCostume; // Note: myCostume are indices, we need hex if this isn't overridden
             
+            // If not overridden (solo play or something), we need to convert myCostume indices to hex
+            let finalCostume = costumeOverride;
+            if(!finalCostume) {
+                finalCostume = {
+                    skin: PALETTES.skin[myCostume.skin],
+                    hair: PALETTES.hair[myCostume.hair],
+                    shirt: PALETTES.shirt[myCostume.shirt],
+                    pants: PALETTES.pants[myCostume.pants],
+                    hairStyle: myCostume.hairStyle
+                };
+            }
+
+            const mesh = createHumanoid(finalCostume, myUsername); 
+            scene.add(mesh); playerMesh = mesh; window.playerMesh = mesh;
             const shape = new CANNON.Sphere(0.6); 
             playerBody = new CANNON.Body({ mass: 1, fixedRotation: true, material: world.defaultMaterial });
-            playerBody.addShape(shape); 
-            playerBody.position.set(-5, 2, 0);
-            playerBody.linearDamping = 0.0; 
+            playerBody.addShape(shape); playerBody.position.set(-5, 2, 0); playerBody.linearDamping = 0.0; 
             world.addBody(playerBody);
-            
             player = { mesh, body: playerBody, isPlayer: true }; 
             window.playerBody = playerBody;
-            prevPlayerPos.x = playerBody.position.x;
-            prevPlayerPos.y = playerBody.position.y;
-            prevPlayerPos.z = playerBody.position.z;
+            prevPlayerPos.x = playerBody.position.x; prevPlayerPos.y = playerBody.position.y; prevPlayerPos.z = playerBody.position.z;
         }
 
         function updatePhysics() {
@@ -1470,165 +1490,78 @@
             for(let i = 0; i < world.contacts.length; i++) {
                 const c = world.contacts[i];
                 if(c.bi === playerBody || c.bj === playerBody) {
-                    if(c.bi === playerBody) { 
-                        if(c.ni.y < -0.5) isGrounded = true; 
-                    } else { 
-                        if(c.ni.y > 0.5) isGrounded = true; 
-                    }
-                    
-                    // Collision sound effect (with cooldown to prevent buzzing)
+                    if(c.bi === playerBody) { if(c.ni.y < -0.5) isGrounded = true; } else { if(c.ni.y > 0.5) isGrounded = true; }
                     if(gameActive) {
                         const now = Date.now();
-                        const relVel = c.bi === playerBody ? 
-                            c.bi.velocity.length() : c.bj.velocity.length();
-                        // Only play on significant impacts (not normal running), with cooldown
-                        if(relVel > 25 && now - lastCollisionSound > 500) {
-                            playSoundEffect('collision');
-                            lastCollisionSound = now;
-                        }
+                        const relVel = c.bi === playerBody ? c.bi.velocity.length() : c.bj.velocity.length();
+                        if(relVel > 25 && now - lastCollisionSound > 500) { playSoundEffect('collision'); lastCollisionSound = now; }
                     }
                 }
             }
             if (isGrounded) lastGroundedTime = Date.now();
-            
             const time = Date.now() * 0.001;
             obstacles.forEach(obs => {
                 if(obs.type === 'spinner') obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), time * obs.speed);
                 else if(obs.type === 'tilt') obs.body.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), Math.sin(time * obs.speed + obs.offset) * 0.5);
                 obs.mesh.position.copy(obs.body.position); obs.mesh.quaternion.copy(obs.body.quaternion);
             });
-
-            if(gameActive || !gameActive) { // Run respawn check ALWAYS (fixes black screen glitch on load)
+            if(gameActive || !gameActive) { 
                 if(playerBody && playerBody.position.y < levelMinY - 30) {
                     playerBody.position.set(currentRespawnPos.x, currentRespawnPos.y, currentRespawnPos.z);
                     playerBody.velocity.set(0, 0, 0); 
-                    if(gameActive) {
-                        playerMomentum = 30; // Reset momentum
-                        if(checkpointActivated) updateCommentary('fall'); else updateCommentary('fall');
-                    }
+                    if(gameActive) { playerMomentum = 30; if(checkpointActivated) updateCommentary('fall'); else updateCommentary('fall'); }
                 }
             }
-
             if(gameActive) {
-                // Checkpoint
                 if(checkpointPos && !checkpointActivated && playerBody.position.x > checkpointPos.x) {
-                    checkpointActivated = true; 
-                    currentRespawnPos = { x: checkpointPos.x, y: checkpointPos.y + 10, z: checkpointPos.z };
+                    checkpointActivated = true; currentRespawnPos = { x: checkpointPos.x, y: checkpointPos.y + 10, z: checkpointPos.z };
                     if(window.checkpointFlagMat) window.checkpointFlagMat.color.setHex(0x00ff00);
-                    playTone(880, 0.1, 'sine', 0.2); 
-                    setTimeout(() => playTone(1100, 0.2, 'sine', 0.2), 100);
+                    playTone(880, 0.1, 'sine', 0.2); setTimeout(() => playTone(1100, 0.2, 'sine', 0.2), 100);
                     updateCommentary('checkpoint');
                 }
-
-                // Update Opponents
                 for (const uid in window.opponentsData) {
-                    const data = window.opponentsData[uid];
-                    if(uid === myId) continue; 
-                    
+                    const data = window.opponentsData[uid]; if(uid === myId) continue; 
                     if (!opponents[uid]) {
-                        const oppColor = PLAYER_COLORS[data.colorIndex] || 0xff0000;
-                        const mesh = createHumanoid(oppColor, data.username); 
+                        // Pass costume data
+                        const mesh = createHumanoid(data.costume || {}, data.username); 
                         scene.add(mesh);
-                        opponents[uid] = { 
-                            mesh: mesh, 
-                            lastPos: new THREE.Vector3(data.x, data.y, data.z) 
-                        };
+                        opponents[uid] = { mesh: mesh, lastPos: new THREE.Vector3(data.x, data.y, data.z) };
                     }
-                    
-                    const opp = opponents[uid];
-                    const currentPos = new THREE.Vector3(data.x, data.y, data.z);
-                    const speed = currentPos.distanceTo(opp.lastPos) * 60; 
-                    opp.lastPos.copy(currentPos);
-                    opp.mesh.position.lerp(new THREE.Vector3(data.x, data.y - 0.1, data.z), 0.2);
-                    opp.mesh.rotation.y = data.rot;
-                    
-                    // Animation
-                    const armL = opp.mesh.getObjectByName('armL'); 
-                    const armR = opp.mesh.getObjectByName('armR');
-                    const legL = opp.mesh.getObjectByName('legL'); 
-                    const legR = opp.mesh.getObjectByName('legR');
+                    const opp = opponents[uid]; const currentPos = new THREE.Vector3(data.x, data.y, data.z);
+                    const speed = currentPos.distanceTo(opp.lastPos) * 60; opp.lastPos.copy(currentPos);
+                    opp.mesh.position.lerp(new THREE.Vector3(data.x, data.y - 0.1, data.z), 0.2); opp.mesh.rotation.y = data.rot;
+                    const armL = opp.mesh.getObjectByName('armL'); const armR = opp.mesh.getObjectByName('armR');
+                    const legL = opp.mesh.getObjectByName('legL'); const legR = opp.mesh.getObjectByName('legR');
                     if(speed > 0.5) {
                         const runTime = Date.now() * 0.015;
-                        if(armL) armL.rotation.x = Math.sin(runTime) * 0.8; 
-                        if(armR) armR.rotation.x = -Math.sin(runTime) * 0.8;
-                        if(legL) legL.rotation.x = -Math.sin(runTime) * 0.8; 
-                        if(legR) legR.rotation.x = Math.sin(runTime) * 0.8;
+                        if(armL) armL.rotation.x = Math.sin(runTime) * 0.8; if(armR) armR.rotation.x = -Math.sin(runTime) * 0.8;
+                        if(legL) legL.rotation.x = -Math.sin(runTime) * 0.8; if(legR) legR.rotation.x = Math.sin(runTime) * 0.8;
                     } else {
-                        if(armL) armL.rotation.x = 0; if(armR) armR.rotation.x = 0; 
-                        if(legL) legL.rotation.x = 0; if(legR) legR.rotation.x = 0;
+                        if(armL) armL.rotation.x = 0; if(armR) armR.rotation.x = 0; if(legL) legL.rotation.x = 0; if(legR) legR.rotation.x = 0;
                     }
                 }
+                for (const uid in opponents) { if (!window.opponentsData[uid]) { scene.remove(opponents[uid].mesh); delete opponents[uid]; } }
                 
-                // Cleanup
-                for (const uid in opponents) { 
-                    if (!window.opponentsData[uid]) { 
-                        scene.remove(opponents[uid].mesh); 
-                        delete opponents[uid]; 
-                    } 
-                }
-
-                // Player Controls
-                const baseSpeed = 30; const maxSpeed = 50; 
-                const acceleration = 0.15; const deceleration = 0.5;
-                
+                const baseSpeed = 30; const maxSpeed = 50; const acceleration = 0.15; const deceleration = 0.5;
                 if (keys.w) playerMomentum = Math.min(playerMomentum + acceleration, maxSpeed);
                 else playerMomentum = Math.max(playerMomentum - deceleration, baseSpeed);
-                
                 const pct = ((playerMomentum - baseSpeed) / (maxSpeed - baseSpeed)) * 100;
                 document.getElementById('speed-bar').style.width = `${pct}%`;
                 
                 const force = new CANNON.Vec3(0, 0, 0);
                 const fwdX = Math.cos(cameraAngle); const fwdZ = Math.sin(cameraAngle);
                 const rightX = -Math.sin(cameraAngle); const rightZ = Math.cos(cameraAngle);
-                
                 if(keys.w) { force.x += fwdX * playerMomentum; force.z += fwdZ * playerMomentum; }
                 if(keys.s) { force.x -= fwdX * (playerMomentum * 0.6); force.z -= fwdZ * (playerMomentum * 0.6); }
                 if(keys.a) { force.x -= rightX * (playerMomentum * 0.8); force.z -= rightZ * (playerMomentum * 0.8); }
                 if(keys.d) { force.x += rightX * (playerMomentum * 0.8); force.z += rightZ * (playerMomentum * 0.8); }
-                
-                playerBody.velocity.x = force.x * 0.5; 
-                playerBody.velocity.z = force.z * 0.5;
-                
-                if(keys.w && Math.abs(playerBody.velocity.y) > 0.5) { 
-                    playerBody.velocity.x += fwdX * 0.2; 
-                    playerBody.velocity.z += fwdZ * 0.2; 
-                }
-                
-                if(keys.space && (Date.now() - lastGroundedTime < 200)) { 
-                    lastGroundedTime = 0; 
-                    playerBody.velocity.y = 20; 
-                    playSoundEffect('jump');
-                }
-                
+                playerBody.velocity.x = force.x * 0.5; playerBody.velocity.z = force.z * 0.5;
+                if(keys.w && Math.abs(playerBody.velocity.y) > 0.5) { playerBody.velocity.x += fwdX * 0.2; playerBody.velocity.z += fwdZ * 0.2; }
+                if(keys.space && (Date.now() - lastGroundedTime < 200)) { lastGroundedTime = 0; playerBody.velocity.y = 20; playSoundEffect('jump'); }
                 checkFinish();
             }
-
-            if(player) {
-                player.mesh.position.copy(player.body.position); 
-                player.mesh.position.y -= 0.1; 
-                
-                const vel = player.body.velocity; 
-                const speed = Math.sqrt(vel.x*vel.x + vel.z*vel.z);
-                if(speed > 0.5) player.mesh.rotation.y = Math.atan2(vel.x, vel.z); 
-                
-                const armL = player.mesh.getObjectByName('armL'); 
-                const armR = player.mesh.getObjectByName('armR');
-                const legL = player.mesh.getObjectByName('legL'); 
-                const legR = player.mesh.getObjectByName('legR');
-                
-                if(speed > 1 && player.body.position.y > -10) {
-                    const runTime = Date.now() * 0.015;
-                    if(armL) armL.rotation.x = Math.sin(runTime) * 0.8; 
-                    if(armR) armR.rotation.x = -Math.sin(runTime) * 0.8;
-                    if(legL) legL.rotation.x = -Math.sin(runTime) * 0.8; 
-                    if(legR) legR.rotation.x = Math.sin(runTime) * 0.8;
-                } else {
-                    if(armL) armL.rotation.x = 0; if(armR) armR.rotation.x = 0; 
-                    if(legL) legL.rotation.x = 0; if(legR) legR.rotation.x = 0;
-                }
-            }
         }
-
+        
         function checkFinish() {
             if(!hasFinished && playerBody.position.x > finishLineX) {
                 hasFinished = true; 
@@ -1645,7 +1578,7 @@
             }
             document.getElementById('rank').innerText = `Rank: ${countAhead + 1}`;
         }
-
+        
         function showEndScreen() {
             window.gameActive = false; 
             gameActive = false;
@@ -1722,16 +1655,12 @@
             requestAnimationFrame(animate); 
             
             const currentTime = performance.now();
-            
-            // Calculate actual time elapsed for physics
-            const deltaTime = (currentTime - lastPhysicsTime) / 1000; // Convert to seconds
+            const deltaTime = (currentTime - lastPhysicsTime) / 1000;
             lastPhysicsTime = currentTime;
             
-            // Cap delta time to prevent spiral of death
             const clampedDelta = Math.min(deltaTime, 0.1);
             accumulator += clampedDelta;
             
-            // Update physics in fixed timesteps, storing previous state for interpolation
             while (accumulator >= fixedTimeStep) {
                 if (playerBody) {
                     prevPlayerPos.x = playerBody.position.x;
@@ -1751,10 +1680,8 @@
                 accumulator -= fixedTimeStep;
             }
             
-            // Interpolation factor for smooth rendering between physics steps
             const alpha = accumulator / fixedTimeStep;
             
-            // Interpolate obstacle visuals between previous and current physics state
             obstacles.forEach((obs, i) => {
                 if (prevObstacleStates[i]) {
                     const prev = prevObstacleStates[i];
@@ -1771,17 +1698,38 @@
                 }
             });
             
-            // Interpolate player mesh position
             if (player) {
                 player.mesh.position.set(
                     prevPlayerPos.x + (player.body.position.x - prevPlayerPos.x) * alpha,
                     prevPlayerPos.y + (player.body.position.y - prevPlayerPos.y) * alpha - 0.1,
                     prevPlayerPos.z + (player.body.position.z - prevPlayerPos.z) * alpha
                 );
+                
+                // Animation Logic moved here from updatePhysics
+                const vel = player.body.velocity; 
+                const speed = Math.sqrt(vel.x*vel.x + vel.z*vel.z);
+                if(speed > 0.5) player.mesh.rotation.y = Math.atan2(vel.x, vel.z); 
+                
+                const armL = player.mesh.getObjectByName('armL'); 
+                const armR = player.mesh.getObjectByName('armR');
+                const legL = player.mesh.getObjectByName('legL'); 
+                const legR = player.mesh.getObjectByName('legR');
+                
+                if(speed > 1 && player.body.position.y > -10) {
+                    const runTime = Date.now() * 0.015;
+                    if(armL) armL.rotation.x = Math.sin(runTime) * 0.8; 
+                    if(armR) armR.rotation.x = -Math.sin(runTime) * 0.8;
+                    if(legL) legL.rotation.x = -Math.sin(runTime) * 0.8; 
+                    if(legR) legR.rotation.x = Math.sin(runTime) * 0.8;
+                } else {
+                    if(armL) armL.rotation.x = 0; 
+                    if(armR) armR.rotation.x = 0; 
+                    if(legL) legL.rotation.x = 0; 
+                    if(legR) legR.rotation.x = 0;
+                }
             }
             
             if(playerBody) {
-                // Use interpolated position for camera target
                 const targetX = prevPlayerPos.x + (playerBody.position.x - prevPlayerPos.x) * alpha;
                 const targetY = prevPlayerPos.y + (playerBody.position.y - prevPlayerPos.y) * alpha;
                 const targetZ = prevPlayerPos.z + (playerBody.position.z - prevPlayerPos.z) * alpha;
@@ -1789,10 +1737,9 @@
                 const camHeight = 10;
                 const camX = targetX - radius * Math.cos(cameraAngle); 
                 const camZ = targetZ - radius * Math.sin(cameraAngle);
-                // Time-based camera smoothing for consistent movement
+                
                 const lerpFactor = 1 - Math.pow(CAMERA_SMOOTHING_BASE, clampedDelta * 60);
                 camera.position.lerp(new THREE.Vector3(camX, targetY + camHeight, camZ), lerpFactor);
-                // Derive lookAt from the smoothed camera position to prevent jitter
                 camera.lookAt(camera.position.x + radius * Math.cos(cameraAngle), camera.position.y - camHeight + 2, camera.position.z + radius * Math.sin(cameraAngle));
             }
             
