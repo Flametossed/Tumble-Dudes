@@ -1531,7 +1531,7 @@
                 const qSlope = new CANNON.Quaternion();
                 qSlope.setFromAxisAngle(new CANNON.Vec3(0,0,1), slopeAngle);
                 const qTurn = new CANNON.Quaternion();
-                qTurn.setFromAxisAngle(new CANNON.Vec3(0,1,0), currentAngle);
+                qTurn.setFromAxisAngle(new CANNON.Vec3(0,1,0), -currentAngle);
                 const qFinal = qTurn.mult(qSlope);
                 
                 // Create manual object to bypass Euler restrictions of createBox
