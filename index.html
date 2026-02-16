@@ -1459,6 +1459,9 @@
             
             player = { mesh, body: playerBody, isPlayer: true }; 
             window.playerBody = playerBody;
+            prevPlayerPos.x = playerBody.position.x;
+            prevPlayerPos.y = playerBody.position.y;
+            prevPlayerPos.z = playerBody.position.z;
         }
 
         function updatePhysics() {
@@ -1737,7 +1740,7 @@
                 }
                 obstacles.forEach((obs, i) => {
                     if (!prevObstacleStates[i]) {
-                        prevObstacleStates[i] = { px:0, py:0, pz:0, qx:0, qy:0, qz:0, qw:1 };
+                        prevObstacleStates[i] = {};
                     }
                     const s = prevObstacleStates[i];
                     s.px = obs.body.position.x; s.py = obs.body.position.y; s.pz = obs.body.position.z;
@@ -1760,12 +1763,11 @@
                         prev.py + (obs.body.position.y - prev.py) * alpha,
                         prev.pz + (obs.body.position.z - prev.pz) * alpha
                     );
-                    obs.mesh.quaternion.set(
-                        prev.qx + (obs.body.quaternion.x - prev.qx) * alpha,
-                        prev.qy + (obs.body.quaternion.y - prev.qy) * alpha,
-                        prev.qz + (obs.body.quaternion.z - prev.qz) * alpha,
-                        prev.qw + (obs.body.quaternion.w - prev.qw) * alpha
-                    ).normalize();
+                    obs.mesh.quaternion.set(prev.qx, prev.qy, prev.qz, prev.qw);
+                    obs.mesh.quaternion.slerp(
+                        new THREE.Quaternion(obs.body.quaternion.x, obs.body.quaternion.y, obs.body.quaternion.z, obs.body.quaternion.w),
+                        alpha
+                    );
                 }
             });
             
