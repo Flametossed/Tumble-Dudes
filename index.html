@@ -1715,7 +1715,7 @@
                 const legL = player.mesh.getObjectByName('legL'); 
                 const legR = player.mesh.getObjectByName('legR');
                 
-                if(speed > 1 && player.body.position.y > -10) {
+                if(speed > 1) {
                     const runTime = Date.now() * 0.015;
                     if(armL) armL.rotation.x = Math.sin(runTime) * 0.8; 
                     if(armR) armR.rotation.x = -Math.sin(runTime) * 0.8;
