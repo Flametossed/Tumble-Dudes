@@ -1355,8 +1355,8 @@
             const usedRecently = [];
 
             // Level is divided into zones for variety
-            const zoneCount = 3 + Math.floor(Math.random() * 3); // 3-5 zones
-            const segmentsPerZone = 5 + Math.floor(Math.random() * 5); // 5-9 per zone
+            const zoneCount = 4 + Math.floor(Math.random() * 3); // 4-6 zones
+            const segmentsPerZone = 6 + Math.floor(Math.random() * 5); // 6-10 per zone
 
             for (let zone = 0; zone < zoneCount; zone++) {
                 // Each zone has a rising difficulty curve
@@ -1396,11 +1396,11 @@
                         let pool;
 
                         if (effectiveDiff < 0.33) {
-                            pool = r < 0.3 ? medium : easy;
+                            pool = r < 0.5 ? medium : easy;
                         } else if (effectiveDiff < 0.66) {
-                            pool = r < 0.4 ? hard : (r < 0.7 ? medium : easy);
+                            pool = r < 0.6 ? hard : (r < 0.85 ? medium : easy);
                         } else {
-                            pool = r < 0.5 ? hard : (r < 0.8 ? medium : easy);
+                            pool = r < 0.75 ? hard : (r < 0.95 ? medium : easy);
                         }
 
                         // Pick from pool, avoid repeats of last 3 segments
@@ -1652,7 +1652,7 @@
                         const t = transform(12.5, 6, 0);
                         const hammer = createBox(8, 1, 1, t.x, t.y, t.z, theme.primary, 10, 0, currentAngle, 0);
                         hammer.body.type = CANNON.Body.KINEMATIC; 
-                        obstacles.push({ ...hammer, type: 'spinner', speed: 3 }); 
+                        obstacles.push({ ...hammer, type: 'spinner', speed: 4 }); 
                         currentPos = transform(25, 0, 0);
                         break; 
                     }
@@ -1662,7 +1662,7 @@
                             const t = transform(8 + (i*10), 0.5, 0);
                             const p = createBox(8, 0.5, 8, t.x, t.y, t.z, theme.secondary, 10, 0, currentAngle, 0); 
                             p.body.type = CANNON.Body.KINEMATIC; 
-                            obstacles.push({ ...p, type: 'tilt', speed: 1.5, offset: i, levelAngle: currentAngle }); 
+                            obstacles.push({ ...p, type: 'tilt', speed: 2, offset: i, levelAngle: currentAngle }); 
                         } 
                         currentPos = transform(25, 0, 0);
                         break; 
@@ -1681,13 +1681,13 @@
                         const t1 = transform(15, 6, -8);
                         const h1 = createBox(8, 1, 1, t1.x, t1.y, t1.z, theme.primary, 10, 0, currentAngle, 0);
                         h1.body.type = CANNON.Body.KINEMATIC;
-                        obstacles.push({ ...h1, type: 'spinner', speed: 4 });
+                        obstacles.push({ ...h1, type: 'spinner', speed: 5 });
                         
                         // Spinner Left 2
                         const t2 = transform(35, 6, -8);
                         const h2 = createBox(8, 1, 1, t2.x, t2.y, t2.z, theme.primary, 10, 0, currentAngle, 0);
                         h2.body.type = CANNON.Body.KINEMATIC;
-                        obstacles.push({ ...h2, type: 'spinner', speed: -4 });
+                        obstacles.push({ ...h2, type: 'spinner', speed: -5 });
 
                         // Walls Right
                         addBoxRelative(1, 4, 8, 15, 2, 8, theme.wall);
@@ -1724,7 +1724,7 @@
                         const t = transform(15, 0, 0);
                         const disc = createCylinder(12, 12, 1, t.x, t.y, t.z, theme.accent, 100);
                         disc.body.type = CANNON.Body.KINEMATIC;
-                        obstacles.push({ ...disc, type: 'rotating_disc', speed: 3.5 });
+                        obstacles.push({ ...disc, type: 'rotating_disc', speed: 5 });
                         
                         addBoxRelative(5, 1, 10, 27.5, 0, 0, baseColor);
                         currentPos = transform(30, 0, 0);
@@ -1739,7 +1739,7 @@
                             const p = createBox(8, 1, 8, t.x, t.y, t.z, theme.primary, 100, 0, currentAngle, 0);
                             p.body.type = CANNON.Body.KINEMATIC;
                             // Pass angle so we know which way is "side"
-                            obstacles.push({ ...p, type: 'moving_platform', speed: 2, offset: i * 2, initialPos: {x: t.x, y: t.y, z: t.z}, levelAngle: currentAngle });
+                            obstacles.push({ ...p, type: 'moving_platform', speed: 3, offset: i * 2, initialPos: {x: t.x, y: t.y, z: t.z}, levelAngle: currentAngle });
                         }
                         currentPos = transform(44, 0, 0);
                         break;
@@ -1770,7 +1770,7 @@
                             const t = transform(lx, 0.75, 0);
                             const bar = createBox(8, 0.5, 0.5, t.x, t.y, t.z, theme.primary, 10, 0, currentAngle, 0);
                             bar.body.type = CANNON.Body.KINEMATIC;
-                            obstacles.push({ ...bar, type: 'spinner', speed: 15 });
+                            obstacles.push({ ...bar, type: 'spinner', speed: 20 });
                          }
                          currentPos = transform(30, 0, 0);
                          break;
@@ -1796,7 +1796,7 @@
                             const t = transform(lx, 2, -4);
                             const p = createBox(2, 2, 4, t.x, t.y, t.z, theme.primary, 100, 0, currentAngle, 0);
                             p.body.type = CANNON.Body.KINEMATIC;
-                            obstacles.push({ ...p, type: 'puncher', speed: 3, offset: i, initialPos: {x: t.x, y: t.y, z: t.z}, levelAngle: currentAngle });
+                            obstacles.push({ ...p, type: 'puncher', speed: 4, offset: i, initialPos: {x: t.x, y: t.y, z: t.z}, levelAngle: currentAngle });
                         }
                         currentPos = transform(20, 0, 0);
                         break;
@@ -1889,7 +1889,7 @@
                             const t = transform(lx, 0, 0);
                             const wp = createBox(6, 1, 8, t.x, t.y, t.z, theme.secondary, 100, 0, currentAngle, 0);
                             wp.body.type = CANNON.Body.KINEMATIC;
-                            obstacles.push({ ...wp, type: 'wave_platform', speed: 1.5, offset: i * 1.5, initialPos: {x: t.x, y: t.y, z: t.z} });
+                            obstacles.push({ ...wp, type: 'wave_platform', speed: 2, offset: i * 1.5, initialPos: {x: t.x, y: t.y, z: t.z} });
                         }
                         addBoxRelative(5, 1, 10, 43, 0, 0, baseColor); // exit
                         currentPos = transform(48, 0, 0);
@@ -1909,7 +1909,7 @@
                             const t = transform(lx, 3.5, 0);
                             const bar = createBox(10, 0.8, 0.8, t.x, t.y, t.z, theme.primary, 10, 0, currentAngle, 0);
                             bar.body.type = CANNON.Body.KINEMATIC;
-                            obstacles.push({ ...bar, type: 'spinner', speed: (i % 2 === 0 ? 4 : -4) });
+                            obstacles.push({ ...bar, type: 'spinner', speed: (i % 2 === 0 ? 5 : -5) });
                         }
                         currentPos = transform(40, 0, 0);
                         break;
