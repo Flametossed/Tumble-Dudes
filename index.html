@@ -1343,7 +1343,7 @@
         window.generateRandomLevelStructure = function() {
             const easy = ['path', 'walls', 'arch_jump', 'gap_jump', 'zigzag'];
             const medium = ['narrow', 'tilts', 'steps_up', 'steps_down', 'ramp_up', 'ramp_down', 'floating_islands', 'pillars', 's_curve', 'drop_ledges'];
-            const hard = ['hammers', 'split_hammers_walls', 'split_ramp_tunnel', 'rotating_disc', 'moving_platforms', 'low_spinners', 'punch_wall', 'wave_platforms', 'bumper_alley'];
+            const hard = ['hammers', 'split_hammers_walls', 'split_ramp_tunnel', 'rotating_disc', 'moving_platforms', 'low_spinners', 'punch_wall', 'wave_platforms', 'bumper_alley', 'pendulum_gauntlet', 'spinner_corridor'];
 
             // Pick a random theme for this level
             const theme = LEVEL_THEMES[Math.floor(Math.random() * LEVEL_THEMES.length)];
@@ -1790,11 +1790,11 @@
                     case 'punch_wall': {
                         addBoxRelative(20, 1, 12, 10, 0, 0, baseColor);
                         addBoxRelative(20, 5, 2, 10, 3, -5, theme.wall);
-                        // Pistons
+                        // Pistons (enlarged for more danger)
                         for(let i=0; i<3; i++) {
                             const lx = 5 + (i*5);
-                            const t = transform(lx, 2, -4);
-                            const p = createBox(2, 2, 4, t.x, t.y, t.z, theme.primary, 100, 0, currentAngle, 0);
+                            const t = transform(lx, 2.5, -4);
+                            const p = createBox(3, 4, 6, t.x, t.y, t.z, theme.primary, 100, 0, currentAngle, 0);
                             p.body.type = CANNON.Body.KINEMATIC;
                             obstacles.push({ ...p, type: 'puncher', speed: 4, offset: i, initialPos: {x: t.x, y: t.y, z: t.z}, levelAngle: currentAngle });
                         }
@@ -1915,6 +1915,48 @@
                         break;
                     }
                     
+                    case 'pendulum_gauntlet': {
+                        // Entry platform
+                        addBoxRelative(5, 1, 12, 2.5, 0, 0, baseColor);
+                        // Long corridor floor
+                        addBoxRelative(35, 1, 12, 22.5, 0, 0, baseColor);
+                        // Three pendulums sweeping across the path with staggered phases
+                        for (let i = 0; i < 3; i++) {
+                            const lx = 10 + i * 10;
+                            // Overhead pivot post
+                            addBoxRelative(1, 6, 1, lx, 3, 0, theme.wall);
+                            // Pendulum arm - tall box that sweeps side to side
+                            const t = transform(lx, 3, 0);
+                            const pend = createBox(1, 6, 1, t.x, t.y, t.z, theme.primary, 10, 0, currentAngle, 0);
+                            pend.body.type = CANNON.Body.KINEMATIC;
+                            obstacles.push({ ...pend, type: 'pendulum', speed: 1.8, offset: i * 2.1, amplitude: 5, initialPos: { x: t.x, y: t.y, z: t.z }, levelAngle: currentAngle });
+                        }
+                        // Exit platform
+                        addBoxRelative(5, 1, 12, 42.5, 0, 0, baseColor);
+                        currentPos = transform(45, 0, 0);
+                        break;
+                    }
+
+                    case 'spinner_corridor': {
+                        // Narrow walled corridor with staggered low spinners
+                        addBoxRelative(40, 1, 6, 20, 0, 0, baseColor);
+                        // Side walls to enforce the narrow passage
+                        addBoxRelative(40, 3, 1, 20, 1.5, -3, theme.wall);
+                        addBoxRelative(40, 3, 1, 20, 1.5, 3, theme.wall);
+                        // Staggered spinners at different lateral positions
+                        for (let i = 0; i < 4; i++) {
+                            const lx = 7 + i * 9;
+                            const lz = (i % 2 === 0) ? -1.5 : 1.5;
+                            addBoxRelative(1, 1, 1, lx, 0.5, lz, theme.wall); // post
+                            const t = transform(lx, 1, lz);
+                            const bar = createBox(5, 0.5, 0.5, t.x, t.y, t.z, theme.primary, 10, 0, currentAngle, 0);
+                            bar.body.type = CANNON.Body.KINEMATIC;
+                            obstacles.push({ ...bar, type: 'spinner', speed: (i % 2 === 0 ? 18 : -18) });
+                        }
+                        currentPos = transform(40, 0, 0);
+                        break;
+                    }
+
                     case 'finish': {
                         finishLinePos.copy(currentPos); // Approximate check
                         addBoxRelative(20, 1, 20, 10, 0, 0, 0xffd700);
@@ -2177,6 +2219,19 @@
                         obs.initialPos.z
                      );
                      obs.body.velocity.set(0, 3 * obs.speed * Math.cos(time * obs.speed + obs.offset), 0);
+                }
+                else if (obs.type === 'pendulum') {
+                     // Sweeps side-to-side across the path
+                     const sx = -Math.sin(obs.levelAngle);
+                     const sz = Math.cos(obs.levelAngle);
+                     const swingOffset = Math.sin(time * obs.speed + obs.offset) * obs.amplitude;
+                     obs.body.position.set(
+                        obs.initialPos.x + sx * swingOffset,
+                        obs.initialPos.y,
+                        obs.initialPos.z + sz * swingOffset
+                     );
+                     const vMag = obs.amplitude * obs.speed * Math.cos(time * obs.speed + obs.offset);
+                     obs.body.velocity.set(sx * vMag, 0, sz * vMag);
                 }
 
                 obs.mesh.position.copy(obs.body.position); 
