@@ -2594,8 +2594,9 @@
 
                 // Update Blob Shadow Position
                 if(playerMesh && playerShadow) {
+                    raycaster.camera = camera;
                     raycaster.set(playerMesh.position, downVector);
-                    const intersectable = levelObjects.map(o => o.mesh);
+                    const intersectable = levelObjects.map(o => o.mesh).filter(m => !(m instanceof THREE.Sprite));
                     const intersects = raycaster.intersectObjects(intersectable);
                     
                     if(intersects.length > 0) {
