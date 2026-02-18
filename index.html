@@ -1585,6 +1585,27 @@
                     levelObjects.push({ mesh: flag, body: new CANNON.Body({mass:0}) });
 
                     addBoxRelative(25, 1, 25, 10, -0.2, 0, 0x66ff66);
+
+                    // Directional arrow indicating the direction of travel
+                    const arrowPos = transform(10, 6, 0);
+                    const arrowGroup = new THREE.Group();
+                    const arrowMat = new THREE.MeshPhongMaterial({ color: 0xffff00, emissive: 0x886600 });
+                    // Shaft
+                    const shaftGeo = new THREE.BoxGeometry(4, 0.6, 0.6);
+                    const shaft = new THREE.Mesh(shaftGeo, arrowMat);
+                    shaft.castShadow = true;
+                    arrowGroup.add(shaft);
+                    // Arrowhead cone pointing in local +X (forward)
+                    const coneGeo = new THREE.ConeGeometry(1.2, 2.5, 6);
+                    const arrowHead = new THREE.Mesh(coneGeo, arrowMat);
+                    arrowHead.rotation.z = -Math.PI / 2;
+                    arrowHead.position.x = 3.25;
+                    arrowHead.castShadow = true;
+                    arrowGroup.add(arrowHead);
+                    arrowGroup.position.set(arrowPos.x, arrowPos.y, arrowPos.z);
+                    arrowGroup.rotation.y = currentAngle;
+                    scene.add(arrowGroup);
+                    levelObjects.push({ mesh: arrowGroup, body: new CANNON.Body({mass:0}) });
                 }
 
                 switch(seg) {
@@ -1958,17 +1979,72 @@
                     }
 
                     case 'finish': {
-                        finishLinePos.copy(currentPos); // Approximate check
-                        addBoxRelative(20, 1, 20, 10, 0, 0, 0xffd700);
-                        // Arch
-                        const t = transform(0, 4.5, 0); // Arch at start of pad
-                        const arch = createBox(2, 8, 10, t.x, t.y, t.z, 0xffd700, 0, 0, currentAngle, 0);
-                        arch.mesh.material.transparent = true; 
-                        arch.mesh.material.opacity = 0.5; 
-                        arch.body.collisionFilterGroup = 0; 
-                        
-                        // Set physics check to be plane collision or distance check
-                        finishLinePos.set(t.x, t.y, t.z);
+                        finishLinePos.copy(currentPos);
+
+                        // Checkerboard finish floor (physical + visual)
+                        const cbCanvas = document.createElement('canvas');
+                        cbCanvas.width = 256; cbCanvas.height = 256;
+                        const cbCtx = cbCanvas.getContext('2d');
+                        for (let r = 0; r < 8; r++) {
+                            for (let c = 0; c < 8; c++) {
+                                cbCtx.fillStyle = (r + c) % 2 === 0 ? '#000000' : '#ffd700';
+                                cbCtx.fillRect(c * 32, r * 32, 32, 32);
+                            }
+                        }
+                        const cbTex = new THREE.CanvasTexture(cbCanvas);
+                        const floorGeo = new THREE.BoxGeometry(30, 1, 30);
+                        const floorMesh = new THREE.Mesh(floorGeo, new THREE.MeshPhongMaterial({ map: cbTex }));
+                        const floorT = transform(15, 0, 0);
+                        floorMesh.position.set(floorT.x, floorT.y, floorT.z);
+                        floorMesh.rotation.y = currentAngle;
+                        floorMesh.castShadow = true; floorMesh.receiveShadow = true;
+                        scene.add(floorMesh);
+                        const floorShape = new CANNON.Box(new CANNON.Vec3(15, 0.5, 15));
+                        const floorBody = new CANNON.Body({ mass: 0, material: world.defaultMaterial });
+                        floorBody.addShape(floorShape); floorBody.position.set(floorT.x, floorT.y, floorT.z);
+                        const floorQ = new CANNON.Quaternion(); floorQ.setFromEuler(0, currentAngle, 0); floorBody.quaternion.copy(floorQ);
+                        world.addBody(floorBody);
+                        levelObjects.push({ mesh: floorMesh, body: floorBody });
+
+                        // Left pillar (tall, thick, red)
+                        addBoxRelative(5, 30, 5, 3, 15, -14, 0xff2222);
+                        // White stripe on left pillar
+                        addBoxRelative(5.2, 4, 5.2, 3, 12, -14, 0xffffff);
+                        // Right pillar
+                        addBoxRelative(5, 30, 5, 3, 15, 14, 0xff2222);
+                        // White stripe on right pillar
+                        addBoxRelative(5.2, 4, 5.2, 3, 12, 14, 0xffffff);
+                        // Top beam spanning both pillars
+                        addBoxRelative(5, 5, 32, 3, 30, 0, 0xff2222);
+                        // White centre stripe on beam
+                        addBoxRelative(5.2, 2, 32.2, 3, 28, 0, 0xffffff);
+
+                        // FINISH sign sprite above gate
+                        const finPos = transform(3, 36, 0);
+                        const finCanvas = document.createElement('canvas');
+                        finCanvas.width = 512; finCanvas.height = 128;
+                        const finCtx = finCanvas.getContext('2d');
+                        finCtx.fillStyle = '#ff2222';
+                        finCtx.fillRect(0, 0, 512, 128);
+                        finCtx.strokeStyle = '#ffd700';
+                        finCtx.lineWidth = 8;
+                        finCtx.strokeRect(4, 4, 504, 120);
+                        finCtx.font = 'bold 80px Arial';
+                        finCtx.fillStyle = '#ffffff';
+                        finCtx.textAlign = 'center';
+                        finCtx.textBaseline = 'middle';
+                        finCtx.fillText('FINISH', 256, 64);
+                        const finTex = new THREE.CanvasTexture(finCanvas);
+                        const finSpriteMat = new THREE.SpriteMaterial({ map: finTex });
+                        const finSprite = new THREE.Sprite(finSpriteMat);
+                        finSprite.position.set(finPos.x, finPos.y, finPos.z);
+                        finSprite.scale.set(18, 4.5, 1);
+                        scene.add(finSprite);
+                        levelObjects.push({ mesh: finSprite, body: new CANNON.Body({mass:0}) });
+
+                        // Detection point at gate entrance, ground level
+                        const detectionPoint = transform(3, 1, 0);
+                        finishLinePos.set(detectionPoint.x, detectionPoint.y, detectionPoint.z);
                         break; 
                     }
                 }
@@ -2316,7 +2392,7 @@
             // Updated to check distance to finish arch because we might approach from any angle
             if(!hasFinished) {
                 const dist = playerBody.position.distanceTo(finishLinePos);
-                if(dist < 5) {
+                if(dist < 12) {
                     hasFinished = true; 
                     window.hasFinished = true; 
                     playSoundEffect('finish');
