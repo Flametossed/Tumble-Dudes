@@ -1603,7 +1603,7 @@
                     arrowHead.castShadow = true;
                     arrowGroup.add(arrowHead);
                     arrowGroup.position.set(arrowPos.x, arrowPos.y, arrowPos.z);
-                    arrowGroup.rotation.y = currentAngle;
+                    arrowGroup.rotation.y = -currentAngle;
                     scene.add(arrowGroup);
                     levelObjects.push({ mesh: arrowGroup, body: new CANNON.Body({mass:0}) });
                 }
@@ -1815,9 +1815,9 @@
                         for(let i=0; i<3; i++) {
                             const lx = 5 + (i*5);
                             const t = transform(lx, 2.5, -4);
-                            const p = createBox(3, 4, 6, t.x, t.y, t.z, theme.primary, 100, 0, currentAngle, 0);
+                            const p = createBox(3, 4, 12, t.x, t.y, t.z, theme.primary, 100, 0, currentAngle, 0);
                             p.body.type = CANNON.Body.KINEMATIC;
-                            obstacles.push({ ...p, type: 'puncher', speed: 4, offset: i, initialPos: {x: t.x, y: t.y, z: t.z}, levelAngle: currentAngle });
+                            obstacles.push({ ...p, type: 'puncher', speed: 4, offset: i, amplitude: 10, initialPos: {x: t.x, y: t.y, z: t.z}, levelAngle: currentAngle });
                         }
                         currentPos = transform(20, 0, 0);
                         break;
@@ -2042,8 +2042,8 @@
                         scene.add(finSprite);
                         levelObjects.push({ mesh: finSprite, body: new CANNON.Body({mass:0}) });
 
-                        // Detection point at gate entrance, ground level
-                        const detectionPoint = transform(3, 1, 0);
+                        // Detection point at the checkered platform, ground level
+                        const detectionPoint = transform(15, 1, 0);
                         finishLinePos.set(detectionPoint.x, detectionPoint.y, detectionPoint.z);
                         break; 
                     }
@@ -2277,7 +2277,7 @@
                      const sx = -Math.sin(obs.levelAngle);
                      const sz = Math.cos(obs.levelAngle);
                      
-                     const pOffset = Math.sin(time * obs.speed + obs.offset) * 3;
+                     const pOffset = Math.sin(time * obs.speed + obs.offset) * obs.amplitude;
                      const dist = Math.abs(pOffset);
                      
                      obs.body.position.set(
