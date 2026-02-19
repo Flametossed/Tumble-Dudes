@@ -1354,6 +1354,52 @@
             let lastSegType = 'start';
             const usedRecently = [];
 
+            // Track approximate world position and heading to prevent path doubling back
+            const LEVEL_START_X = -5; // world X coordinate where players spawn
+            let simAngle = 0; // radians; 0 = +X direction (initial heading)
+            let simX = LEVEL_START_X + 15, simZ = 0; // approximate position after 'start' segment (15 units forward)
+
+            // Approximate forward distance each segment type advances the path
+            const segFwd = {
+                start: 15, path: 30, narrow: 20, ramp_up: 30, ramp_down: 30,
+                walls: 25, hammers: 25, tilts: 25, split_hammers_walls: 45,
+                split_ramp_tunnel: 55, rotating_disc: 30, moving_platforms: 44,
+                steps_up: 20, steps_down: 20, low_spinners: 30, arch_jump: 30,
+                gap_jump: 28, zigzag: 36, floating_islands: 50, pillars: 44,
+                s_curve: 48, drop_ledges: 44, wave_platforms: 48,
+                bumper_alley: 40, pendulum_gauntlet: 45, spinner_corridor: 40
+            };
+
+            // Update simulated position for a pushed segment
+            function simAdvance(seg) {
+                if (seg === 'turn_left' || seg === 'turn_right') {
+                    // Turn segment: 20 units forward on the current heading, then pivot 90°,
+                    // then 10 units forward on the new heading (matches buildLevelFromSegments)
+                    simX += Math.cos(simAngle) * 20; simZ += Math.sin(simAngle) * 20;
+                    simAngle += seg === 'turn_left' ? -Math.PI / 2 : Math.PI / 2;
+                    simX += Math.cos(simAngle) * 10; simZ += Math.sin(simAngle) * 10;
+                } else {
+                    const fwd = segFwd[seg] || 30;
+                    simX += Math.cos(simAngle) * fwd; simZ += Math.sin(simAngle) * fwd;
+                }
+            }
+
+            // Return whether applying a turn would keep heading within ±135° of start
+            function isTurnSafe(dir) {
+                const newAngle = simAngle + (dir === 'turn_left' ? -Math.PI / 2 : Math.PI / 2);
+                // Normalize to [-π, π] to get canonical angle relative to the start direction
+                const normalized = Math.atan2(Math.sin(newAngle), Math.cos(newAngle));
+                return Math.abs(normalized) < (3 * Math.PI / 4);
+            }
+
+            // Pick a safe turn direction; if neither is safe, return null
+            function safeTurn(preferred) {
+                if (isTurnSafe(preferred)) return preferred;
+                const alt = preferred === 'turn_left' ? 'turn_right' : 'turn_left';
+                if (isTurnSafe(alt)) return alt;
+                return null;
+            }
+
             // Level is divided into zones for variety
             const zoneCount = 4 + Math.floor(Math.random() * 3); // 4-6 zones
             const segmentsPerZone = 6 + Math.floor(Math.random() * 5); // 6-10 per zone
@@ -1366,10 +1412,13 @@
                 if (zone > 0) {
                     // Only add zone transition turn if the previous segment wasn't a turn
                     if (!lastSegType.includes('turn')) {
-                        const turnDir = zone % 2 === 0 ? 'turn_left' : 'turn_right';
+                        const preferred = zone % 2 === 0 ? 'turn_left' : 'turn_right';
+                        const turnDir = safeTurn(preferred) || preferred;
                         level.push(turnDir);
+                        simAdvance(turnDir);
                     }
                     level.push('path');
+                    simAdvance('path');
                     segmentsSinceTurn = 0;
                     lastSegType = 'path';
                     usedRecently.length = 0;
@@ -1382,7 +1431,9 @@
                     // Force turn after 4-6 straight segments (but never consecutive turns)
                     const turnThreshold = 4 + Math.floor(Math.random() * 3);
                     if (segmentsSinceTurn >= turnThreshold && !lastSegType.includes('ramp') && !lastSegType.includes('steps') && !lastSegType.includes('turn')) {
-                        next = Math.random() > 0.5 ? 'turn_left' : 'turn_right';
+                        const preferred = Math.random() > 0.5 ? 'turn_left' : 'turn_right';
+                        const safe = safeTurn(preferred);
+                        next = safe !== null ? safe : 'path'; // skip turn if both dirs unsafe
                     }
                     // After a turn, always place a path buffer
                     else if (lastSegType === 'turn_left' || lastSegType === 'turn_right') {
@@ -1422,6 +1473,7 @@
                     if (next === 'ramp_down' || next === 'steps_down' || next === 'drop_ledges') currentElevation--;
 
                     level.push(next);
+                    simAdvance(next);
                     lastSegType = next;
                     usedRecently.push(next);
                     if (usedRecently.length > 3) usedRecently.shift();
@@ -1431,8 +1483,17 @@
             }
 
             // Bring elevation back to roughly 0 before finish
-            while (currentElevation > 1) { level.push('ramp_down'); currentElevation--; }
-            while (currentElevation < -1) { level.push('ramp_up'); currentElevation++; }
+            while (currentElevation > 1) { level.push('ramp_down'); simAdvance('ramp_down'); currentElevation--; }
+            while (currentElevation < -1) { level.push('ramp_up'); simAdvance('ramp_up'); currentElevation++; }
+
+            // Ensure the finish is far enough from the start to prevent skipping
+            const MIN_FINISH_DIST = 80;
+            let dist2D = Math.sqrt(Math.pow(simX - LEVEL_START_X, 2) + Math.pow(simZ, 2));
+            while (dist2D < MIN_FINISH_DIST) {
+                level.push('path');
+                simAdvance('path');
+                dist2D = Math.sqrt(Math.pow(simX - LEVEL_START_X, 2) + Math.pow(simZ, 2));
+            }
 
             level.push('finish');
             // Attach theme data to the array for buildLevelFromSegments to use
