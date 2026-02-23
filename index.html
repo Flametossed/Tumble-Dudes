@@ -340,6 +340,53 @@
             .action-row { flex-direction: column; gap: 15px; }
             .separator-vert { width: 100%; height: 1px; }
         }
+
+        /* Mobile Touch Controls */
+        #mobile-controls {
+            display: none;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 50; pointer-events: none;
+        }
+        #joystick-zone {
+            position: absolute; bottom: 0; left: 0; width: 45%; height: 100%;
+            pointer-events: auto;
+        }
+        #joystick-container {
+            position: absolute; display: none;
+        }
+        #joystick-base {
+            position: absolute; width: 120px; height: 120px; border-radius: 50%;
+            background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.4);
+        }
+        #joystick-thumb {
+            position: absolute; width: 50px; height: 50px; border-radius: 50%;
+            background: rgba(255,255,255,0.65); top: 35px; left: 35px;
+        }
+        #mobile-cam-zone {
+            position: absolute; top: 0; right: 0; width: 55%; height: calc(100% - 160px);
+            pointer-events: auto;
+        }
+        #mobile-btn-zone {
+            position: absolute; bottom: 30px; right: 30px;
+            display: flex; gap: 15px; align-items: flex-end;
+            pointer-events: auto;
+        }
+        .mobile-btn {
+            border-radius: 50%; background: rgba(255,255,255,0.2);
+            border: 2px solid rgba(255,255,255,0.5); color: white; font-weight: bold;
+            display: flex; align-items: center; justify-content: center;
+            user-select: none; -webkit-user-select: none; touch-action: none;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8); font-size: 0.85em;
+        }
+        #mobile-jump-btn {
+            width: 80px; height: 80px;
+            background: rgba(255, 200, 0, 0.35); border-color: rgba(255, 200, 0, 0.7);
+        }
+        #mobile-dash-btn {
+            width: 65px; height: 65px;
+            background: rgba(255, 0, 255, 0.35); border-color: rgba(255, 0, 255, 0.7);
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
@@ -493,6 +540,21 @@
         </div>
         <div id="end-screen-controls">
             <!-- Buttons injected JS -->
+        </div>
+    </div>
+
+    <!-- Mobile Controls Overlay (shown on mobile devices) -->
+    <div id="mobile-controls">
+        <div id="joystick-zone">
+            <div id="joystick-container">
+                <div id="joystick-base"></div>
+                <div id="joystick-thumb"></div>
+            </div>
+        </div>
+        <div id="mobile-cam-zone"></div>
+        <div id="mobile-btn-zone">
+            <div id="mobile-dash-btn" class="mobile-btn">DASH</div>
+            <div id="mobile-jump-btn" class="mobile-btn">JUMP</div>
         </div>
     </div>
 
@@ -684,6 +746,15 @@
         let isPlayingMusic = false;
         let currentTrack = null;
         const keys = { w: false, a: false, s: false, d: false, space: false };
+        
+        // Mobile detection and input
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+                         (navigator.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches);
+        let mobileJoystick = { x: 0, y: 0 };
+        let joystickTouchId = null, joystickBaseX = 0, joystickBaseY = 0;
+        const JOYSTICK_RADIUS = 50;
+        const JOYSTICK_DEAD_ZONE = 0.2;
+        let mobileCamTouchId = null, mobileCamLastX = 0;
         
         // Countdown state
         let isCountingDown = false;
@@ -1024,6 +1095,7 @@
             isCountingDown = true;
             document.getElementById('lobby-ui').style.display = 'none';
             document.getElementById('ui').style.display = 'block';
+            if (isMobile) document.getElementById('mobile-controls').style.display = 'block';
             window.startMultiplayerGame(level, false); 
             const overlay = document.getElementById('countdown-overlay');
             overlay.style.display = 'flex';
@@ -1058,6 +1130,7 @@
             document.getElementById('win-screen').style.display = 'none';
             document.getElementById('ui').style.display = 'none';
             document.getElementById('ping-indicator').style.display = 'none';
+            document.getElementById('mobile-controls').style.display = 'none';
             document.getElementById('lobby-ui').style.display = 'flex';
             document.getElementById('main-menu').style.display = 'flex';
             document.getElementById('wait-room').style.display = 'none';
@@ -1115,6 +1188,106 @@
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, 64, 64);
             return new THREE.CanvasTexture(canvas);
+        }
+
+        function initMobileControls() {
+            if (!isMobile) return;
+            document.getElementById('controls-hint').style.display = 'none';
+
+            const joystickZone = document.getElementById('joystick-zone');
+            const joystickContainer = document.getElementById('joystick-container');
+            const joystickThumb = document.getElementById('joystick-thumb');
+            const camZone = document.getElementById('mobile-cam-zone');
+            const jumpBtn = document.getElementById('mobile-jump-btn');
+            const dashBtn = document.getElementById('mobile-dash-btn');
+
+            // Initialize audio on first touch
+            document.addEventListener('touchstart', () => { if (!audioCtx) initAudio(); }, { once: true });
+
+            // Joystick handlers
+            joystickZone.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (joystickTouchId !== null) return;
+                const touch = e.changedTouches[0];
+                joystickTouchId = touch.identifier;
+                const rect = joystickZone.getBoundingClientRect();
+                joystickBaseX = touch.clientX - rect.left;
+                joystickBaseY = touch.clientY - rect.top;
+                joystickContainer.style.display = 'block';
+                joystickContainer.style.left = (joystickBaseX - 60) + 'px';
+                joystickContainer.style.top = (joystickBaseY - 60) + 'px';
+                joystickThumb.style.left = '35px';
+                joystickThumb.style.top = '35px';
+            }, { passive: false });
+
+            joystickZone.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                for (const touch of e.changedTouches) {
+                    if (touch.identifier !== joystickTouchId) continue;
+                    const rect = joystickZone.getBoundingClientRect();
+                    const dx = (touch.clientX - rect.left) - joystickBaseX;
+                    const dy = (touch.clientY - rect.top) - joystickBaseY;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const clampedDist = Math.min(dist, JOYSTICK_RADIUS);
+                    const angle = Math.atan2(dy, dx);
+                    mobileJoystick.x = (Math.cos(angle) * clampedDist) / JOYSTICK_RADIUS;
+                    mobileJoystick.y = (Math.sin(angle) * clampedDist) / JOYSTICK_RADIUS;
+                    joystickThumb.style.left = (35 + Math.cos(angle) * clampedDist) + 'px';
+                    joystickThumb.style.top = (35 + Math.sin(angle) * clampedDist) + 'px';
+                }
+            }, { passive: false });
+
+            joystickZone.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                for (const touch of e.changedTouches) {
+                    if (touch.identifier !== joystickTouchId) continue;
+                    joystickTouchId = null;
+                    mobileJoystick.x = 0; mobileJoystick.y = 0;
+                    joystickContainer.style.display = 'none';
+                }
+            }, { passive: false });
+
+            joystickZone.addEventListener('touchcancel', () => {
+                joystickTouchId = null;
+                mobileJoystick.x = 0; mobileJoystick.y = 0;
+                joystickContainer.style.display = 'none';
+            }, { passive: false });
+
+            // Camera rotation handlers
+            camZone.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (mobileCamTouchId !== null) return;
+                const touch = e.changedTouches[0];
+                mobileCamTouchId = touch.identifier;
+                mobileCamLastX = touch.clientX;
+            }, { passive: false });
+
+            camZone.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                for (const touch of e.changedTouches) {
+                    if (touch.identifier !== mobileCamTouchId) continue;
+                    cameraAngle += (touch.clientX - mobileCamLastX) * 0.005;
+                    mobileCamLastX = touch.clientX;
+                }
+            }, { passive: false });
+
+            camZone.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                for (const touch of e.changedTouches) {
+                    if (touch.identifier !== mobileCamTouchId) continue;
+                    mobileCamTouchId = null;
+                }
+            }, { passive: false });
+
+            camZone.addEventListener('touchcancel', () => { mobileCamTouchId = null; }, { passive: false });
+
+            // Jump button
+            jumpBtn.addEventListener('touchstart', (e) => { e.preventDefault(); keys.space = true; }, { passive: false });
+            jumpBtn.addEventListener('touchend', (e) => { e.preventDefault(); keys.space = false; }, { passive: false });
+            jumpBtn.addEventListener('touchcancel', () => { keys.space = false; }, { passive: false });
+
+            // Dash button
+            dashBtn.addEventListener('touchstart', (e) => { e.preventDefault(); attemptDash(); }, { passive: false });
         }
 
         async function init() {
@@ -1192,11 +1365,12 @@
             window.addEventListener('resize', onWindowResize);
             document.addEventListener('click', () => {
                 if (!audioCtx) initAudio();
-                if (window.gameActive && !isPointerLocked && !isCountingDown) document.body.requestPointerLock();
+                if (!isMobile && window.gameActive && !isPointerLocked && !isCountingDown) document.body.requestPointerLock();
             });
             document.addEventListener('pointerlockchange', () => { isPointerLocked = document.pointerLockElement === document.body; });
             document.addEventListener('mousemove', (e) => { if (isPointerLocked) cameraAngle += e.movementX * 0.002; });
             
+            initMobileControls();
             animate();
         }
         
@@ -2442,7 +2616,7 @@
                 for (const uid in opponents) { if (!window.opponentsData[uid]) { scene.remove(opponents[uid].mesh); delete opponents[uid]; } }
                 
                 const baseSpeed = 30; const maxSpeed = 50; const acceleration = 0.15; const deceleration = 0.5;
-                if (keys.w) playerMomentum = Math.min(playerMomentum + acceleration, maxSpeed);
+                if (keys.w || mobileJoystick.y < -JOYSTICK_DEAD_ZONE) playerMomentum = Math.min(playerMomentum + acceleration, maxSpeed);
                 else playerMomentum = Math.max(playerMomentum - deceleration, baseSpeed);
                 const pct = ((playerMomentum - baseSpeed) / (maxSpeed - baseSpeed)) * 100;
                 document.getElementById('speed-bar').style.width = `${pct}%`;
@@ -2454,6 +2628,11 @@
                 if(keys.s) { force.x -= fwdX * (playerMomentum * 0.6); force.z -= fwdZ * (playerMomentum * 0.6); }
                 if(keys.a) { force.x -= rightX * (playerMomentum * 0.8); force.z -= rightZ * (playerMomentum * 0.8); }
                 if(keys.d) { force.x += rightX * (playerMomentum * 0.8); force.z += rightZ * (playerMomentum * 0.8); }
+                const jx = mobileJoystick.x, jy = mobileJoystick.y;
+                if(jy < -JOYSTICK_DEAD_ZONE) { force.x += fwdX * playerMomentum * (-jy); force.z += fwdZ * playerMomentum * (-jy); }
+                if(jy > JOYSTICK_DEAD_ZONE) { force.x -= fwdX * (playerMomentum * 0.6) * jy; force.z -= fwdZ * (playerMomentum * 0.6) * jy; }
+                if(jx < -JOYSTICK_DEAD_ZONE) { force.x -= rightX * (playerMomentum * 0.8) * (-jx); force.z -= rightZ * (playerMomentum * 0.8) * (-jx); }
+                if(jx > JOYSTICK_DEAD_ZONE) { force.x += rightX * (playerMomentum * 0.8) * jx; force.z += rightZ * (playerMomentum * 0.8) * jx; }
                 
                 // --- DASH VECTOR INTEGRATION ---
                 // Add dash vector to velocity, then decay dash vector
@@ -2465,7 +2644,7 @@
                 if(Math.abs(dashVector.x) < 0.1) dashVector.x = 0;
                 if(Math.abs(dashVector.z) < 0.1) dashVector.z = 0;
 
-                if(keys.w && Math.abs(playerBody.velocity.y) > 0.5) { playerBody.velocity.x += fwdX * 0.2; playerBody.velocity.z += fwdZ * 0.2; }
+                if((keys.w || mobileJoystick.y < -JOYSTICK_DEAD_ZONE) && Math.abs(playerBody.velocity.y) > 0.5) { playerBody.velocity.x += fwdX * 0.2; playerBody.velocity.z += fwdZ * 0.2; }
                 if(keys.space && (Date.now() - lastGroundedTime < 200)) { lastGroundedTime = 0; playerBody.velocity.y = 20; playSoundEffect('jump'); }
                 checkFinish();
             }
@@ -2517,6 +2696,7 @@
             window.gameActive = false; 
             gameActive = false;
             document.exitPointerLock();
+            if (isMobile) document.getElementById('mobile-controls').style.display = 'none';
             
             const winScreen = document.getElementById('win-screen');
             const leaderboardDiv = document.getElementById('final-leaderboard');
