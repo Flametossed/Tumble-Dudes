@@ -344,7 +344,7 @@
 </head>
 <body>
     <div id="loading-overlay">
-        <div>Connecting to Cloud...</div>
+        <div id="loading-overlay-text" role="status" aria-live="polite">Connecting to Cloud...</div>
         <div style="font-size: 0.5em; color: #888;">v9.2 Flow Edition</div>
     </div>
     
@@ -731,6 +731,7 @@
         // --- NETWORK FUNCTIONS ---
         function createLobby() {
             if (typeof Peer === 'undefined') { alert('PeerJS library not loaded yet.'); return; }
+            if (peer) { return; }
             
             const username = document.getElementById('username-input').value || "Host Dude";
             myUsername = username;
@@ -744,6 +745,7 @@
 
         function joinLobby() {
             if (typeof Peer === 'undefined') { alert('PeerJS library not loaded yet.'); return; }
+            if (peer) { return; }
             
             const username = document.getElementById('username-input').value || "Guest Dude";
             myUsername = username;
@@ -770,15 +772,24 @@
         }
 
         function initPeer(customId, lobbyCode) {
+            document.getElementById('loading-overlay-text').textContent = 'Connecting to Cloud...';
             document.getElementById('loading-overlay').style.display = 'flex';
+
+            // Guard against double error handling (e.g. peer error + hostConn error firing together)
+            let hasErrored = false;
+            function handleInitError(msg) {
+                if (hasErrored) return;
+                hasErrored = true;
+                document.getElementById('loading-overlay').style.display = 'none';
+                alert(msg);
+                if (peer) { peer.destroy(); peer = null; }
+                hostConn = null;
+                backToMenu();
+            }
             
             const connectionTimeout = setTimeout(() => {
                 if(peer && !peer.id) {
-                    document.getElementById('loading-overlay').style.display = 'none';
-                    alert(`Connection timeout! Check firewall settings.`);
-                    if(peer) peer.destroy();
-                    peer = null;
-                    backToMenu();
+                    handleInitError('Connection timeout! Check firewall settings.');
                 }
             }, 15000);
             
@@ -791,7 +802,6 @@
             peer.on('open', (id) => {
                 clearTimeout(connectionTimeout);
                 myId = id;
-                document.getElementById('loading-overlay').style.display = 'none';
                 
                 // Construct the costume object with HEX values for network transmission
                 const costumeToSend = {
@@ -803,15 +813,25 @@
                 };
                 
                 if(isHost) {
+                    document.getElementById('loading-overlay').style.display = 'none';
                     enterLobbyUI(lobbyCode);
                     window.opponentsData[myId] = { username: myUsername, isHost: true, costume: costumeToSend, ready: false };
                     updateLobbyList();
                     startPingLoop();
                 } else {
+                    // Keep loading overlay visible until the host connection opens
+                    document.getElementById('loading-overlay-text').textContent = 'Joining lobby...';
                     const hostId = "tumble-" + lobbyCode;
-                    hostConn = peer.connect(hostId);
+                    hostConn = peer.connect(hostId, { reliable: true }); // reliable ensures join/state messages aren't dropped
+
+                    // Timeout if the host connection never opens
+                    const hostConnTimeout = setTimeout(() => {
+                        handleInitError('Unable to join lobby. Please verify the lobby code is correct and the host is online.');
+                    }, 10000);
                     
                     hostConn.on('open', () => {
+                        clearTimeout(hostConnTimeout);
+                        document.getElementById('loading-overlay').style.display = 'none';
                         console.log("Connected to Host!");
                         hostConn.send({ type: 'join', username: myUsername, costume: costumeToSend });
                         enterLobbyUI(lobbyCode);
@@ -820,7 +840,7 @@
 
                     hostConn.on('data', handleDataFromHost);
                     hostConn.on('close', () => { showNotification("Host disconnected!"); setTimeout(() => backToMenu(), 2000); });
-                    hostConn.on('error', (err) => { alert("Connection Error: " + err); backToMenu(); });
+                    hostConn.on('error', (err) => { clearTimeout(hostConnTimeout); handleInitError("Connection Error: " + err); });
                 }
             });
 
@@ -838,14 +858,16 @@
                     updateLobbyList();
                     broadcastState();
                 });
+                conn.on('error', (err) => { console.error('Connection error from peer:', err); });
             });
 
             peer.on('error', (err) => {
                 clearTimeout(connectionTimeout);
-                document.getElementById('loading-overlay').style.display = 'none';
                 console.error('Peer error:', err);
-                alert("Network Error: " + (err.type || err.message));
-                backToMenu();
+                const msg = err.type === 'peer-unavailable'
+                    ? 'Lobby not found! Please check the code and try again.'
+                    : 'Network Error: ' + (err.type || err.message);
+                handleInitError(msg);
             });
         }
 
